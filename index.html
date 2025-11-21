@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bytes_of_data | Data Science Mentorship & Interview Prep</title>
+    <meta name="description" content="Master data science with expert mentorship, comprehensive courses, and 200+ interview questions. Learn from industry professionals." />
+    <meta name="author" content="Tushar - Data Scientist" />
+
+    <meta property="og:title" content="bytes_of_data | Data Science Mentorship" />
+    <meta property="og:description" content="Master data science with expert mentorship and interview preparation" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@Lovable" />
+    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+    <script>
+      // Prevent flash of unstyled content by setting theme before React loads
+      (function() {
+        const stored = localStorage.getItem('theme');
+        const theme = stored && ['dark', 'light', 'system'].includes(stored) 
+          ? stored 
+          : 'system';
+        
+        let resolvedTheme;
+        if (theme === 'system') {
+          resolvedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        } else {
+          resolvedTheme = theme;
+        }
+        
+        document.documentElement.classList.add(resolvedTheme);
+      })();
+    </script>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
