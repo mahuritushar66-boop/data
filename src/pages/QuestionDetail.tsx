@@ -313,7 +313,8 @@ const QuestionDetail = () => {
   });
   const [compilerHeight, setCompilerHeight] = useState(() => {
     const saved = localStorage.getItem("questionDetailCompilerHeight");
-    return saved ? parseFloat(saved) : 90; // Default 90%
+    // Default to 90% for compiler, 10% for output
+    return saved ? parseFloat(saved) : 90; // Default 90% (compiler) / 10% (output)
   });
   const [isResizingHorizontal, setIsResizingHorizontal] = useState(false);
   const [isResizingVertical, setIsResizingVertical] = useState(false);
@@ -1037,18 +1038,6 @@ const QuestionDetail = () => {
                       ) : (
                         <div className="p-5 text-sm text-muted-foreground text-center">
                           No results to display
-                        </div>
-                      )}
-                      {isCompleted && nextQuestionId && (
-                        <div className="p-4 border-t border-border/30 bg-primary/5">
-                          <Button
-                            onClick={() => navigate(`/interview-prep/question/${nextQuestionId}`)}
-                            className="w-full bg-gradient-primary hover:shadow-glow-primary"
-                            size="lg"
-                          >
-                            Next Question
-                            <ArrowRight className="ml-2 h-4 w-4" />
-                          </Button>
                         </div>
                       )}
                     </div>

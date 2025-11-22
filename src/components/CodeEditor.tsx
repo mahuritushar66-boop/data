@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Editor from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal, Trophy } from "lucide-react";
+import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal, Trophy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { db as firestoreDb } from "@/lib/firebase";
@@ -263,6 +263,22 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const [output, setOutput] = useState<{ columns: string[]; values: any[][] } | null>(null);
   const [textOutput, setTextOutput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const outputRef = useRef<{ columns: string[]; values: any[][] } | null>(null);
+  const textOutputRef = useRef<string | null>(null);
+  const loadingRef = useRef(false);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    outputRef.current = output;
+  }, [output]);
+
+  useEffect(() => {
+    textOutputRef.current = textOutput;
+  }, [textOutput]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
   const [validationResult, setValidationResult] = useState<{ passed: boolean; message?: string } | null>(null);
   const [showXpModal, setShowXpModal] = useState(false);
   const { toast: toastHook } = useToast();
@@ -412,7 +428,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         if (actualCols.length !== expectedCols.length) {
           return { 
             passed: false, 
-            message: `Column count mismatch. Expected ${expectedCols.length}, got ${actualCols.length}` 
+            message: "Your output is not matching the expected Output" 
           };
         }
 
@@ -427,7 +443,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         if (actualValues.length !== expectedValues.length) {
           return { 
             passed: false, 
-            message: `Row count mismatch. Expected ${expectedValues.length}, got ${actualValues.length}` 
+            message: "Your output is not matching the expected Output" 
           };
         }
 
@@ -440,7 +456,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         } else {
           return { 
             passed: false, 
-            message: "Output does not match expected result. Check your solution." 
+            message: "Your output is not matching the expected Output" 
           };
         }
       } else if (typeof actualOutput === "string" || textOutput) {
@@ -461,7 +477,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           }
           return { 
             passed: false, 
-            message: "Output does not match expected result. Check your solution." 
+            message: "Your output is not matching the expected Output" 
           };
         }
       }
@@ -920,7 +936,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
               } else {
                 toast({
                   title: "Solution Incorrect",
-                  description: validation.message || "Your output doesn't match the expected result.",
+                  description: "Your output is not matching the expected Output",
                   variant: "destructive",
                 });
               }
@@ -999,7 +1015,7 @@ sys.stdout = StringIO()
           } else {
             toast({
               title: "Solution Incorrect",
-              description: validation.message || "Your output doesn't match the expected result.",
+              description: "Your output is not matching the expected Output",
               variant: "destructive",
             });
           }
@@ -1266,6 +1282,90 @@ sys.stdout = StringIO()
     }
   };
 
+  const handleCheckAnswer = async () => {
+    if (!expectedOutput) {
+      toast({
+        title: "No Expected Output",
+        description: "This question doesn't have an expected output to check against.",
+        variant: "default",
+      });
+      return;
+    }
+
+    // First, run the code automatically if not already running
+    if (loading) {
+      return; // Already running
+    }
+
+    // Store the current output state before running
+    const previousOutput = output;
+    const previousTextOutput = textOutput;
+
+    // Run the code
+    await handleRun();
+
+    // Wait for the execution to complete and state to update
+    // Use a polling approach to check when loading is false and output is set
+    const maxAttempts = 50; // Maximum 5 seconds (50 * 100ms)
+    let attempts = 0;
+
+    const checkInterval = setInterval(() => {
+      attempts++;
+      
+      // Check if loading is done using refs to get current values
+      const currentLoading = loadingRef.current;
+      const currentOutput = outputRef.current;
+      const currentTextOutput = textOutputRef.current;
+      
+      if (attempts >= maxAttempts || (!currentLoading && (currentOutput !== previousOutput || currentTextOutput !== previousTextOutput))) {
+        clearInterval(checkInterval);
+        
+        // Use a small delay to ensure React state has fully updated
+        setTimeout(() => {
+          // Get the latest output values
+          const finalOutput = outputRef.current;
+          const finalTextOutput = textOutputRef.current;
+          
+          if (!finalOutput && !finalTextOutput) {
+            toast({
+              title: "No Output",
+              description: "Code execution did not produce any output.",
+              variant: "default",
+            });
+            return;
+          }
+
+          // Validate the current output against expected output
+          const validation = compareOutputs(finalOutput || finalTextOutput, expectedOutput);
+          setValidationResult(validation);
+
+          if (validation.passed) {
+            toast({
+              title: "✓ Solution Correct!",
+              description: validation.message || "Your output matches the expected result.",
+            });
+            // Track completion and award XP
+            if (questionId && currentUser) {
+              trackQuestionCompletion(questionId).then((xpAwarded) => {
+                if (xpAwarded) {
+                  setShowXpModal(true);
+                }
+              }).catch((error) => {
+                console.error("Error in trackQuestionCompletion:", error);
+              });
+            }
+          } else {
+            toast({
+              title: "Solution Incorrect",
+              description: "Your output does not match the Expected output",
+              variant: "destructive",
+            });
+          }
+        }, 200);
+      }
+    }, 100);
+  };
+
   return (
     <div className={hideOutput ? "h-full flex flex-col" : "space-y-4"}>
       <div className={`${hideOutput ? "flex-1 flex flex-col min-h-0" : ""}`}>
@@ -1278,31 +1378,55 @@ sys.stdout = StringIO()
             {language.toUpperCase()} Editor
           </span>
           </div>
-          <Button
-            onClick={handleRun}
-            disabled={loading || (language === "sql" && !db) || (language === "python" && !pyodide)}
-            size="sm"
-            className="gap-2 text-sm h-9 px-4 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg transition-all"
-            title={
-              language === "sql" && !db
-                ? "Waiting for SQL database to initialize..."
-                : language === "python" && !pyodide
-                ? "Waiting for Python runtime to load..."
-                : "Run code"
-            }
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Running...</span>
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4" />
-                <span>Run Code</span>
-              </>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleRun}
+              disabled={loading || (language === "sql" && !db) || (language === "python" && !pyodide)}
+              size="sm"
+              className="gap-2 text-sm h-9 px-4 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg transition-all"
+              title={
+                language === "sql" && !db
+                  ? "Waiting for SQL database to initialize..."
+                  : language === "python" && !pyodide
+                  ? "Waiting for Python runtime to load..."
+                  : "Run code"
+              }
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Running...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  <span>Run Code</span>
+                </>
+              )}
+            </Button>
+            {expectedOutput && (
+              <Button
+                onClick={handleCheckAnswer}
+                disabled={loading || (language === "sql" && !db) || (language === "python" && !pyodide)}
+                size="sm"
+                variant="outline"
+                className="gap-2 text-sm h-9 px-4 border-primary/50 hover:bg-primary/10 hover:border-primary text-primary"
+                title="Run code and check if output matches expected result"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Checking...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4" />
+                    <span>Check Answer</span>
+                  </>
+                )}
+              </Button>
             )}
-          </Button>
+          </div>
         </div>
         {language === "sql" && availableTables.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs border-b border-border/50 bg-muted/20">
