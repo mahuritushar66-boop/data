@@ -520,7 +520,7 @@ const InterviewModule = () => {
                       <TableCell
                         className={`font-medium ${
                           isLocked
-                            ? "text-muted-foreground cursor-not-allowed"
+                            ? "text-muted-foreground cursor-pointer"
                             : "cursor-pointer hover:text-primary hover:underline"
                         }`}
                         onClick={() => handleQuestionClick(question)}

@@ -3,14 +3,25 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles, Eye, Copy, Check } from "lucide-react";
+import { CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles, Eye, Copy, Check, ArrowRight, ArrowLeft, User, LogOut, Trophy } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { db } from "@/lib/firebase";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, orderBy, getDocs, where } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import CodeEditor from "@/components/CodeEditor";
 import AuthModal from "@/components/AuthModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Link } from "react-router-dom";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type InterviewQuestion = {
   id: string;
@@ -289,6 +300,7 @@ const QuestionDetail = () => {
   const [question, setQuestion] = useState<InterviewQuestion | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [nextQuestionId, setNextQuestionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("question");
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
@@ -301,7 +313,7 @@ const QuestionDetail = () => {
   });
   const [compilerHeight, setCompilerHeight] = useState(() => {
     const saved = localStorage.getItem("questionDetailCompilerHeight");
-    return saved ? parseFloat(saved) : 75; // Default 75%
+    return saved ? parseFloat(saved) : 90; // Default 90%
   });
   const [isResizingHorizontal, setIsResizingHorizontal] = useState(false);
   const [isResizingVertical, setIsResizingVertical] = useState(false);
@@ -339,6 +351,7 @@ const QuestionDetail = () => {
   // Handle vertical resizing (compiler/output)
   const handleMouseDownVertical = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsResizingVertical(true);
   }, []);
 
@@ -359,10 +372,21 @@ const QuestionDetail = () => {
         const rightPanel = container.querySelector('[data-right-panel]') as HTMLElement;
         if (rightPanel) {
           const panelRect = rightPanel.getBoundingClientRect();
+          // Use the actual height of the panel (offsetHeight accounts for padding/borders)
+          const panelHeight = rightPanel.offsetHeight || panelRect.height;
+          // Calculate position relative to the top of the right panel
           const relativeY = e.clientY - panelRect.top;
-          const newHeight = (relativeY / panelRect.height) * 100;
-          const constrainedHeight = Math.max(20, Math.min(80, newHeight));
-          setCompilerHeight(constrainedHeight);
+          // Ensure we have a valid height and positive relative position
+          if (panelHeight > 0 && relativeY > 0) {
+            // Calculate percentage of panel height
+            const newHeightPercent = (relativeY / panelHeight) * 100;
+            // Constrain between 10% and 95%
+            const constrainedHeight = Math.max(10, Math.min(95, newHeightPercent));
+            setCompilerHeight(constrainedHeight);
+          }
+          // Prevent default to avoid text selection and scrolling
+          e.preventDefault();
+          e.stopPropagation();
         }
       }
     };
@@ -468,7 +492,85 @@ const QuestionDetail = () => {
     return unsubscribe;
   }, [currentUser, questionId]);
 
+  // Fetch next question from the same module
+  useEffect(() => {
+    if (!question || !question.title || !questionId) {
+      setNextQuestionId(null);
+      return;
+    }
+
+    const fetchNextQuestion = async () => {
+      try {
+        const moduleTitle = question.title || "General";
+        console.log("Fetching next question for module:", moduleTitle, "Current question ID:", questionId);
+        
+        let snapshot;
+        try {
+          // Try to fetch with orderBy first - use DESC to match the listing page order
+          const questionsQuery = query(
+            collection(db, "interviewQuestions"),
+            orderBy("createdAt", "desc")
+          );
+          snapshot = await getDocs(questionsQuery);
+        } catch (orderError) {
+          // Fallback: fetch without orderBy if createdAt index doesn't exist
+          console.warn("Could not order by createdAt, fetching all questions:", orderError);
+          snapshot = await getDocs(collection(db, "interviewQuestions"));
+        }
+        
+        const allQuestions = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title || "General",
+            createdAt: data.createdAt,
+          };
+        });
+
+        // Sort by createdAt DESC (newest first) to match listing page, otherwise by ID
+        allQuestions.sort((a, b) => {
+          if (a.createdAt && b.createdAt) {
+            // Descending order (newest first) to match listing page
+            return b.createdAt.toMillis() - a.createdAt.toMillis();
+          }
+          return b.id.localeCompare(a.id); // Also descending for ID fallback
+        });
+
+        // Filter by module title and find next question
+        const moduleQuestions = allQuestions.filter(q => {
+          const qTitle = q.title || "General";
+          return qTitle === moduleTitle || qTitle === (moduleTitle || "General");
+        });
+        
+        console.log("Total questions:", allQuestions.length);
+        console.log("Module questions found:", moduleQuestions.length);
+        console.log("Module questions:", moduleQuestions.map(q => ({ id: q.id, title: q.title })));
+        
+        const currentIndex = moduleQuestions.findIndex(q => q.id === questionId);
+        console.log("Current question index:", currentIndex);
+        console.log("Total module questions:", moduleQuestions.length);
+        console.log("Current question ID:", questionId);
+        console.log("All module question IDs:", moduleQuestions.map(q => q.id));
+        
+        if (currentIndex >= 0 && currentIndex < moduleQuestions.length - 1) {
+          const nextId = moduleQuestions[currentIndex + 1].id;
+          console.log("Next question ID found:", nextId);
+          setNextQuestionId(nextId);
+        } else {
+          console.log("No next question - current index:", currentIndex, "total:", moduleQuestions.length);
+          setNextQuestionId(null);
+        }
+      } catch (error) {
+        console.error("Error fetching next question:", error);
+        setNextQuestionId(null);
+      }
+    };
+
+    fetchNextQuestion();
+  }, [question, questionId]);
+
   const moduleTitle = question?.title || "General";
+  const moduleSlug = encodeURIComponent(moduleTitle);
   const language = detectLanguage(moduleTitle);
   const canViewPaid = Boolean(profile?.isPaid);
 
@@ -517,16 +619,133 @@ const QuestionDetail = () => {
     );
   }
 
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return "U";
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/");
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
-      <div className="flex flex-col min-h-screen">
+      {/* Custom Header Bar */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border h-16">
+        <div className="container mx-auto px-4 h-full flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const slug = question?.title ? encodeURIComponent(question.title) : "General";
+                navigate(`/interview-prep/module/${slug}`);
+              }}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back to module
+            </Button>
+          </div>
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            {currentUser ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className="bg-gradient-primary text-primary-foreground">
+                        {getInitials(currentUser.displayName || currentUser.email)}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">
+                        {currentUser.displayName || "User"}
+                      </p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {currentUser.email}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/profile" className="cursor-pointer">
+                      <User className="mr-2 h-4 w-4" />
+                      <span>Profile</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/leaderboard" className="cursor-pointer">
+                      <Trophy className="mr-2 h-4 w-4" />
+                      <span>Leaderboard</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="cursor-pointer">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Log out</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                variant="ghost"
+                onClick={() => setAuthModalOpen(true)}
+                className="flex items-center gap-2"
+              >
+                Sign In
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col min-h-screen pt-16">
         {/* Header */}
-        <div className="px-4 lg:px-6 py-4 bg-background">
+        <div className="px-4 lg:px-6 pt-2 pb-2 bg-background">
           <div className="flex items-start justify-between gap-4 mb-4">
             <h1 className="text-2xl lg:text-3xl font-bold">
               {question.questionTitle || "Interview Question"}
             </h1>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log("Next Question button clicked, nextQuestionId:", nextQuestionId);
+                  if (nextQuestionId) {
+                    console.log("Navigating to next question:", nextQuestionId);
+                    navigate(`/interview-prep/question/${nextQuestionId}`);
+                  } else {
+                    console.log("Next question ID is null, cannot navigate");
+                    toast({
+                      title: "No Next Question",
+                      description: "This is the last question in this module.",
+                      variant: "default",
+                    });
+                  }
+                }}
+                className="flex items-center gap-2 border-primary/50 hover:bg-transparent hover:border-primary/50 cursor-pointer"
+              >
+                <ArrowRight className="h-4 w-4" />
+                Next Question
+              </Button>
               {question.difficulty && (
                 <Badge
                   variant="outline"
@@ -546,17 +765,15 @@ const QuestionDetail = () => {
                 <Code2 className="h-3.5 w-3.5" />
                 <span className="font-medium">{language.toUpperCase()}</span>
               </Badge>
-            </div>
-          </div>
-          {question.company && (
-            <div className="flex items-center gap-2 mb-4">
-              <Badge 
-                variant="secondary" 
-                className="gap-1.5 px-3 py-1 text-sm font-medium bg-secondary/20"
-              >
-                <CompanyLogo companyName={question.company} size={14} className="flex-shrink-0" />
-                {question.company}
-              </Badge>
+              {question.company && (
+                <Badge 
+                  variant="secondary" 
+                  className="gap-1.5 px-3 py-1 text-sm font-medium bg-muted text-foreground border-border/50 hover:bg-muted"
+                >
+                  <CompanyLogo companyName={question.company} size={14} className="flex-shrink-0" />
+                  {question.company}
+                </Badge>
+              )}
               {isCompleted && (
                 <Badge 
                   variant="default" 
@@ -567,7 +784,7 @@ const QuestionDetail = () => {
                 </Badge>
               )}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Main content */}
@@ -747,7 +964,7 @@ const QuestionDetail = () => {
                   className="flex flex-col border-b border-border/30 overflow-hidden"
                   style={{ height: `${compilerHeight}%`, minHeight: '200px' }}
                 >
-                  <div className="flex-1 overflow-hidden p-4 flex flex-col min-h-0">
+                  <div className="flex-1 overflow-hidden flex flex-col min-h-0">
                     <CodeEditor
                       language={language}
                       question={question.question}
@@ -767,13 +984,13 @@ const QuestionDetail = () => {
                 {/* Vertical Resizer */}
                 <div
                   onMouseDown={handleMouseDownVertical}
-                  className={`h-1 bg-border/50 hover:bg-primary/50 cursor-row-resize transition-colors flex items-center justify-center group relative ${
+                  className={`h-2 bg-border/50 hover:bg-primary/50 cursor-row-resize transition-colors flex items-center justify-center group relative z-10 ${
                     isResizingVertical ? 'bg-primary' : ''
                   }`}
-                  style={{ flexShrink: 0 }}
+                  style={{ flexShrink: 0, touchAction: 'none' }}
                 >
-                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 flex items-center justify-center">
-                    <div className="w-8 h-0.5 bg-muted-foreground/30 group-hover:bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-12 flex items-center justify-center">
+                    <div className="w-16 h-1 bg-muted-foreground/40 group-hover:bg-primary opacity-60 group-hover:opacity-100 transition-opacity rounded-full" />
                   </div>
                 </div>
 
@@ -820,6 +1037,18 @@ const QuestionDetail = () => {
                       ) : (
                         <div className="p-5 text-sm text-muted-foreground text-center">
                           No results to display
+                        </div>
+                      )}
+                      {isCompleted && nextQuestionId && (
+                        <div className="p-4 border-t border-border/30 bg-primary/5">
+                          <Button
+                            onClick={() => navigate(`/interview-prep/question/${nextQuestionId}`)}
+                            className="w-full bg-gradient-primary hover:shadow-glow-primary"
+                            size="lg"
+                          >
+                            Next Question
+                            <ArrowRight className="ml-2 h-4 w-4" />
+                          </Button>
                         </div>
                       )}
                     </div>

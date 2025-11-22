@@ -3,7 +3,7 @@ import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
-import { Layers, Code2, BookOpen, Target, TrendingUp, ArrowRight, Zap, Database, Brain, Box, Flame } from "lucide-react";
+import { Layers, Code2, BookOpen, ArrowRight, Database, Brain, Box, Flame } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -117,38 +117,6 @@ const InterviewPrep = () => {
               <br />
               <span className="text-foreground">Hub</span>
             </h1>
-
-
-            {/* Stats */}
-            <div className="flex flex-wrap justify-center gap-8 pt-8">
-              <div className="flex items-center gap-2 animate-fade-up group" style={{ animationDelay: "0.2s" }}>
-                <div className="p-2 rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:scale-110 transition-all">
-                  <Target className="h-5 w-5 text-primary group-hover:animate-pulse" />
-                </div>
-                <div className="text-left">
-                  <p className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">{questions.length}+</p>
-                  <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Questions</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 animate-fade-up group" style={{ animationDelay: "0.3s" }}>
-                <div className="p-2 rounded-lg bg-secondary/10 border border-secondary/20 group-hover:bg-secondary/20 group-hover:scale-110 transition-all">
-                  <Layers className="h-5 w-5 text-secondary group-hover:animate-pulse" />
-                </div>
-                <div className="text-left">
-                  <p className="text-2xl font-bold bg-gradient-to-r from-secondary to-primary bg-clip-text text-transparent">{moduleSummaries.length}</p>
-                  <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Modules</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 animate-fade-up group" style={{ animationDelay: "0.4s" }}>
-                <div className="p-2 rounded-lg bg-accent/10 border border-accent/20 group-hover:bg-accent/20 group-hover:scale-110 transition-all">
-                  <Zap className="h-5 w-5 text-accent group-hover:animate-pulse" />
-                </div>
-                <div className="text-left">
-                  <p className="text-2xl font-bold bg-gradient-to-r from-accent to-secondary bg-clip-text text-transparent">100%</p>
-                  <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Free Access</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -247,7 +215,7 @@ const InterviewPrep = () => {
               </div>
             </GlassCard>
           ) : (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-2">
               {moduleSummaries.map((module, index) => {
                 // Get icon based on module title
                 const getModuleIcon = (title: string) => {
@@ -263,47 +231,47 @@ const InterviewPrep = () => {
                 return (
                   <GlassCard
                     key={module.title}
-                    className="group p-6 space-y-4 cursor-pointer hover:border-primary/60 hover:shadow-glow-primary transition-all duration-300 relative overflow-hidden hover-lift animate-fade-up shine-effect"
+                    className="group p-8 space-y-6 cursor-pointer hover:border-primary/60 hover:shadow-glow-primary transition-all duration-300 relative overflow-hidden hover-lift animate-fade-up shine-effect"
                     onClick={() => handleOpenModule(module.title)}
                     style={{ animationDelay: `${index * 0.1}s` }}
                   >
                     {/* Decorative gradient on hover */}
                     <div className="absolute inset-0 bg-gradient-primary opacity-0 group-hover:opacity-5 transition-opacity duration-300" />
                     
-                    <div className="relative z-10 space-y-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="p-3 rounded-xl bg-gradient-primary group-hover:scale-110 group-hover:rotate-3 group-hover:shadow-glow-primary transition-all duration-300">
-                            <ModuleIcon className="h-6 w-6 text-primary-foreground group-hover:animate-pulse" />
+                    <div className="relative z-10 space-y-6">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                          <div className="p-4 rounded-xl bg-gradient-primary group-hover:scale-110 group-hover:rotate-3 group-hover:shadow-glow-primary transition-all duration-300">
+                            <ModuleIcon className="h-8 w-8 text-primary-foreground group-hover:animate-pulse" />
                           </div>
                           <div>
-                            <h3 className="text-xl font-bold group-hover:text-primary transition-colors gradient-text-primary group-hover:gradient-text-primary">
+                            <h3 className="text-2xl font-bold group-hover:text-primary transition-colors gradient-text-primary group-hover:gradient-text-primary">
                               {module.title}
                             </h3>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge variant="outline" className="text-xs group-hover:border-primary/50 transition-colors">
+                            <div className="flex items-center gap-2 mt-2">
+                              <Badge variant="outline" className="text-sm group-hover:border-primary/50 transition-colors">
                                 {module.freeCount} Free
                               </Badge>
                               {module.premiumCount > 0 && (
-                                <Badge variant="secondary" className="text-xs group-hover:bg-secondary/80 transition-colors">
+                                <Badge variant="secondary" className="text-sm group-hover:bg-secondary/80 transition-colors">
                                   {module.premiumCount} Premium
                                 </Badge>
                               )}
                             </div>
                           </div>
                         </div>
-                        <Badge variant="secondary" className="text-lg font-bold px-3 py-1 group-hover:scale-110 transition-transform">
+                        <Badge variant="secondary" className="text-xl font-bold px-4 py-2 group-hover:scale-110 transition-transform">
                           {module.total}
                         </Badge>
                       </div>
 
-                      <div className="flex items-center justify-between pt-2 border-t border-border/50">
-                        <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+                      <div className="flex items-center justify-between pt-3 border-t border-border/50">
+                        <span className="text-base text-muted-foreground group-hover:text-foreground transition-colors">
                           {module.total} {module.total === 1 ? "question" : "questions"}
                         </span>
                         <div className="flex items-center gap-2 text-primary font-medium group-hover:gap-3 transition-all">
-                          <span className="text-sm">Explore</span>
-                          <ArrowRight className="h-4 w-4 group-hover:translate-x-2 transition-transform group-hover:animate-pulse" />
+                          <span className="text-base">Explore</span>
+                          <ArrowRight className="h-5 w-5 group-hover:translate-x-2 transition-transform group-hover:animate-pulse" />
                         </div>
                       </div>
                     </div>

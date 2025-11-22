@@ -86,31 +86,36 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
     try {
       const parsed = JSON.parse(match[0]);
       if (!Array.isArray(parsed.columns) || !Array.isArray(parsed.values)) continue;
-      // Try to get table name from various possible fields (support both camelCase and snake_case)
-      let rawName =
-        (typeof parsed.tableName === "string" && parsed.tableName.trim()) ||
-        (typeof parsed.table_name === "string" && parsed.table_name.trim()) ||
-        (typeof parsed.name === "string" && parsed.name.trim()) ||
-        (typeof parsed.table === "string" && parsed.table.trim());
       
-      console.log("JSON table found, rawName from JSON:", rawName);
-      console.log("Current tables.length:", tables.length);
-      console.log("mentionedTables:", mentionedTables);
+      console.log("JSON table found, current tables.length:", tables.length);
+      console.log("Admin-provided table names:", adminTableNamesList);
+      console.log("Mentioned tables:", mentionedTables);
       
-      // If no table name in JSON, try to use admin-provided names first, then mentioned tables, then fallback
-      if (!rawName) {
-        if (adminTableNamesList.length > 0 && tables.length < adminTableNamesList.length) {
-          // Use admin-provided table names in order
-          rawName = adminTableNamesList[tables.length];
-          console.log("Using admin-provided table name:", rawName);
+      // Priority: 1. Admin-provided names, 2. JSON table name, 3. Mentioned tables, 4. Fallback
+      let rawName: string | undefined;
+      
+      // First priority: Use admin-provided table names if available
+      if (adminTableNamesList.length > 0 && tables.length < adminTableNamesList.length) {
+        rawName = adminTableNamesList[tables.length];
+        console.log("Using admin-provided table name (priority 1):", rawName);
+      } else {
+        // Second priority: Try to get table name from JSON
+        rawName =
+          (typeof parsed.tableName === "string" && parsed.tableName.trim()) ||
+          (typeof parsed.table_name === "string" && parsed.table_name.trim()) ||
+          (typeof parsed.name === "string" && parsed.name.trim()) ||
+          (typeof parsed.table === "string" && parsed.table.trim());
+        
+        if (rawName) {
+          console.log("Using table name from JSON (priority 2):", rawName);
         } else if (mentionedTables.length > 0) {
-          // Use the first mentioned table for the first JSON block, second for second, etc.
+          // Third priority: Use mentioned tables from question text
           rawName = mentionedTables[Math.min(tables.length, mentionedTables.length - 1)];
-          console.log("Using mentioned table name:", rawName);
+          console.log("Using mentioned table name (priority 3):", rawName);
         } else {
-          // Fallback to generic name only if no table names were mentioned
+          // Fourth priority: Fallback to generic name
           rawName = `dataset_${tables.length + 1}`;
-          console.log("No mentioned tables found, using fallback:", rawName);
+          console.log("Using fallback table name (priority 4):", rawName);
         }
       }
       
@@ -179,6 +184,14 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     }
   };
 
+  const questionTables = useMemo(() => {
+    const tables = extractSqlTablesFromQuestion(question, sqlTableNames);
+    console.log("Extracted SQL tables from question:", tables);
+    console.log("Question text:", question?.substring(0, 500)); // Log first 500 chars
+    console.log("Admin-provided table names:", sqlTableNames);
+    return tables;
+  }, [question, sqlTableNames]);
+
   // Generate initial code with question context
   const getInitialCode = useMemo(() => {
     if (defaultValue) return defaultValue;
@@ -222,10 +235,14 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       initialCode = `${commentPrefix} Write your ${language} code here\n`;
     }
     
-    // Add starter code - for SQL, try to use the first table name from question
+    // Add starter code - for SQL, use the first table name from parsed questionTables
     let firstTableName: string | undefined;
-    if (language === "sql" && question) {
-      // Try to extract first table name from admin-provided names
+    if (language === "sql" && questionTables.length > 0) {
+      // Use the actual table name from the parsed tables (this uses the correct priority)
+      firstTableName = questionTables[0].tableName;
+      console.log("Using table name from questionTables for starter code:", firstTableName);
+    } else if (language === "sql" && question) {
+      // Fallback: try to extract first table name from admin-provided names
       if (sqlTableNames) {
         const names = sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0);
         if (names.length > 0) firstTableName = names[0];
@@ -240,7 +257,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     }
     initialCode += getStarterCode(language, firstTableName);
     return initialCode;
-  }, [defaultValue, question, language, sqlTableNames]);
+  }, [defaultValue, question, language, sqlTableNames, questionTables]);
 
   const [code, setCode] = useState(getInitialCode);
   const [output, setOutput] = useState<{ columns: string[]; values: any[][] } | null>(null);
@@ -314,11 +331,23 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       }
 
       // Award XP (25 points per question)
+      // First check if user document exists
       const userRef = doc(firestoreDb, "users", currentUser.uid);
-      await setDoc(userRef, {
-        xp: increment(25),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+      const userSnap = await getDoc(userRef);
+      
+      if (userSnap.exists()) {
+        // Update existing user document
+        await updateDoc(userRef, {
+          xp: increment(25),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        // Create new user document if it doesn't exist
+        await setDoc(userRef, {
+          xp: 25,
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       setHasAwardedXP(true);
       console.log("trackQuestionCompletion: XP awarded successfully, returning true");
@@ -332,6 +361,19 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         userId: currentUser?.uid,
         questionId: questionId
       });
+      
+      // Handle permission errors - show a helpful message
+      if (error?.code === 'permission-denied' || error?.code === 'PERMISSION_DENIED') {
+        console.error("Permission denied - check Firebase security rules for userQuestionSubmissions and users collections");
+        toastHook({
+          title: "Permission Error",
+          description: "Unable to save completion. Please check your Firebase security rules.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      
+      // Show toast for other errors
       toastHook({
         title: "Error",
         description: error?.message || "Failed to track completion. Please try again.",
@@ -348,13 +390,6 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const dbInitialized = useRef(false);
   const dbRef = useRef<Database | null>(null);
   const pyodideLoading = useRef(false);
-  const questionTables = useMemo(() => {
-    const tables = extractSqlTablesFromQuestion(question, sqlTableNames);
-    console.log("Extracted SQL tables from question:", tables);
-    console.log("Question text:", question?.substring(0, 500)); // Log first 500 chars
-    console.log("Admin-provided table names:", sqlTableNames);
-    return tables;
-  }, [question, sqlTableNames]);
 
   // Function to normalize and compare outputs
   const compareOutputs = (
@@ -865,18 +900,22 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
                   description: validation.message || "Your output matches the expected result.",
                 });
                 // Track completion and award XP
-                if (questionId) {
-                  console.log("Tracking completion for questionId:", questionId);
-                  const xpAwarded = await trackQuestionCompletion(questionId);
-                  console.log("XP awarded result:", xpAwarded);
-                  if (xpAwarded) {
-                    console.log("Setting showXpModal to true");
-                    setShowXpModal(true);
-                  } else {
-                    console.log("XP not awarded, check trackQuestionCompletion logs");
+                if (questionId && currentUser) {
+                  console.log("Tracking completion for questionId:", questionId, "userId:", currentUser.uid);
+                  try {
+                    const xpAwarded = await trackQuestionCompletion(questionId);
+                    console.log("XP awarded result:", xpAwarded);
+                    if (xpAwarded) {
+                      console.log("Setting showXpModal to true");
+                      setShowXpModal(true);
+                    } else {
+                      console.warn("XP not awarded, check trackQuestionCompletion logs above for details");
+                    }
+                  } catch (error) {
+                    console.error("Error in trackQuestionCompletion:", error);
                   }
                 } else {
-                  console.log("No questionId provided, cannot track completion");
+                  console.log("Cannot track completion - questionId:", questionId, "currentUser:", !!currentUser);
                 }
               } else {
                 toast({
@@ -1229,8 +1268,8 @@ sys.stdout = StringIO()
 
   return (
     <div className={hideOutput ? "h-full flex flex-col" : "space-y-4"}>
-      <div className={`border-2 border-border/50 rounded-xl overflow-hidden bg-background/60 shadow-lg ${hideOutput ? "flex-1 flex flex-col min-h-0" : ""}`}>
-        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-muted/40 to-muted/20 border-b border-border/50 gap-3">
+      <div className={`${hideOutput ? "flex-1 flex flex-col min-h-0" : ""}`}>
+        <div className="flex items-center justify-between px-4 py-2 bg-background border-b border-border/30 gap-3">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-md bg-primary/10 border border-primary/20">
               <Code2 className="h-3.5 w-3.5 text-primary" />

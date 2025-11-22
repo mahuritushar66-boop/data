@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Menu, X, LogOut, User, ArrowLeft, Trophy } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
 import AuthModal from "./AuthModal";
+import { db } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,17 +21,45 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [moduleSlug, setModuleSlug] = useState<string | null>(null);
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { questionId } = useParams<{ questionId?: string }>();
   const isAuthPage = ["/admin/login"].includes(location.pathname);
   const isAdminPage = location.pathname.startsWith("/admin");
   const isPracticePage =
     location.pathname.startsWith("/interview-prep/module") ||
     location.pathname.startsWith("/interview-prep/question");
+  const isQuestionPage = location.pathname.startsWith("/interview-prep/question") && !location.pathname.includes("/hint");
   const isInterviewPrepPage = location.pathname === "/interview-prep";
   const hideNavLinks = isAuthPage || isAdminPage || isPracticePage;
+  const hideNavbar = isQuestionPage; // Hide entire navbar on question pages
   const showBackButton = isPracticePage || isInterviewPrepPage;
+
+  // Fetch module slug from question when on question page (only if not hidden)
+  useEffect(() => {
+    if (isQuestionPage && questionId && !hideNavbar) {
+      const questionRef = doc(db, "interviewQuestions", questionId);
+      const unsubscribe = onSnapshot(
+        questionRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            const moduleTitle = data.title || "General";
+            setModuleSlug(encodeURIComponent(moduleTitle));
+          }
+        },
+        (error) => {
+          console.error("Error fetching question for module:", error);
+          setModuleSlug(null);
+        }
+      );
+      return () => unsubscribe();
+    } else {
+      setModuleSlug(null);
+    }
+  }, [isQuestionPage, questionId, hideNavbar]);
 
   const handleLogout = async () => {
     try {
@@ -62,6 +92,11 @@ const Navigation = () => {
     { to: "/about", label: "About" },
     { to: "/contact", label: "Contact" },
   ];
+
+  // Don't render navbar on question pages
+  if (hideNavbar) {
+    return null;
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
@@ -105,11 +140,17 @@ const Navigation = () => {
             {showBackButton && isPracticePage && (
               <Button
                 variant="ghost"
-                onClick={() => navigate("/interview-prep")}
+                onClick={() => {
+                  if (isQuestionPage && moduleSlug) {
+                    navigate(`/interview-prep/module/${moduleSlug}`);
+                  } else {
+                    navigate("/interview-prep");
+                  }
+                }}
                 className="flex items-center gap-2"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Back to modules
+                {isQuestionPage ? "Back to module" : "Back to modules"}
               </Button>
             )}
             <ThemeToggle />
@@ -174,11 +215,17 @@ const Navigation = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate("/interview-prep")}
+                onClick={() => {
+                  if (isQuestionPage && moduleSlug) {
+                    navigate(`/interview-prep/module/${moduleSlug}`);
+                  } else {
+                    navigate("/interview-prep");
+                  }
+                }}
                 className="flex items-center gap-2"
               >
                 <ArrowLeft className="h-4 w-4" />
-                <span className="text-sm">Modules</span>
+                <span className="text-sm">{isQuestionPage ? "Module" : "Modules"}</span>
               </Button>
             </div>
           ) : !hideNavLinks ? (

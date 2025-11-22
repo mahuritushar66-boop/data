@@ -35,13 +35,17 @@ const queryClient = new QueryClient();
 const AppContent = () => {
   const location = useLocation();
   
-  // Hide footer on interview prep pages
-  const hideFooter = location.pathname.startsWith("/interview-prep");
+  // Hide footer on interview prep sub-pages (but show on main interview prep page)
+  const hideFooter = location.pathname.startsWith("/interview-prep") && location.pathname !== "/interview-prep";
+  
+  // Hide navbar padding on question pages (they have their own custom header)
+  const isQuestionPage = location.pathname.startsWith("/interview-prep/question") && !location.pathname.includes("/hint");
+  const mainPaddingTop = isQuestionPage ? "pt-0" : "pt-16";
   
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
-      <main className="flex-1 pt-16">
+      <main className={`flex-1 ${mainPaddingTop}`}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/interview-prep" element={<InterviewPrep />} />

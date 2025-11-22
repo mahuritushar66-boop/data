@@ -17,6 +17,8 @@ import {
   ArrowRight,
   Quote,
   Linkedin,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import heroBg from "@/assets/hero-bg.jpg";
 
@@ -34,6 +36,21 @@ type Testimonial = {
 const Home = () => {
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [testimonialsLoading, setTestimonialsLoading] = useState(true);
+  const [expandedTestimonials, setExpandedTestimonials] = useState<Set<string>>(new Set());
+  
+  const MAX_LENGTH = 150; // Maximum characters to show before "Read more"
+  
+  const toggleTestimonial = (id: string) => {
+    setExpandedTestimonials(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
 
   const services = [
     {
@@ -260,9 +277,35 @@ const Home = () => {
                   style={{ animationDelay: `${index * 0.1}s` }}
                 >
                   <Quote className="h-8 w-8 text-primary" />
-                  <p className="text-lg text-foreground leading-relaxed flex-1">
-                    “{testimonial.message}”
-                  </p>
+                  <div className="flex-1 space-y-2">
+                    <p className="text-lg text-foreground leading-relaxed">
+                      "{expandedTestimonials.has(testimonial.id) 
+                        ? testimonial.message 
+                        : testimonial.message.length > MAX_LENGTH 
+                          ? testimonial.message.substring(0, MAX_LENGTH) + "..."
+                          : testimonial.message}"
+                    </p>
+                    {testimonial.message.length > MAX_LENGTH && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleTestimonial(testimonial.id)}
+                        className="text-primary hover:text-primary/80 p-0 h-auto font-medium text-sm"
+                      >
+                        {expandedTestimonials.has(testimonial.id) ? (
+                          <>
+                            Read less
+                            <ChevronUp className="ml-1 h-4 w-4" />
+                          </>
+                        ) : (
+                          <>
+                            Read more
+                            <ChevronDown className="ml-1 h-4 w-4" />
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
                   {testimonial.highlight && (
                     <p className="text-sm font-semibold text-primary">{testimonial.highlight}</p>
                   )}

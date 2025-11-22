@@ -223,9 +223,13 @@ const PaymentPage = () => {
     <div className="min-h-screen pb-20 pt-4">
       <div className="container mx-auto px-2 lg:px-6 max-w-4xl">
         <div className="mb-6">
-          <Button variant="ghost" className="px-0" onClick={() => navigate(-1)}>
+          <Button 
+            variant="ghost" 
+            className="px-0" 
+            onClick={() => navigate(`/interview-prep/module/${encodeURIComponent(moduleTitle)}`)}
+          >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
+            Back to module
           </Button>
         </div>
 
