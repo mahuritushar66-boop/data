@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Editor from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal, Trophy, Check } from "lucide-react";
+import { Play, Loader2, CheckCircle2, XCircle, Code2, Terminal, Trophy, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { db as firestoreDb } from "@/lib/firebase";
@@ -1469,11 +1469,18 @@ sys.stdout = StringIO()
       </div>
 
       {validationResult && (
-        <div className={`border-2 rounded-xl overflow-hidden shadow-lg ${
+        <div className={`border-2 rounded-xl overflow-hidden shadow-lg relative ${
           validationResult.passed 
             ? "border-green-500/60 bg-gradient-to-br from-green-500/15 to-green-500/5" 
             : "border-red-500/60 bg-gradient-to-br from-red-500/15 to-red-500/5"
         }`}>
+          <button
+            onClick={() => setValidationResult(null)}
+            className="absolute right-2 top-2 rounded-md p-1 hover:bg-background/20 transition-colors z-10"
+            aria-label="Close validation result"
+          >
+            <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+          </button>
           <div className={`px-5 py-4 flex items-center gap-3 ${
             validationResult.passed 
               ? "bg-green-500/20 border-b border-green-500/30" 
