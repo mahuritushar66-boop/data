@@ -348,89 +348,71 @@ const AdminDashboard = () => {
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     
-    const fetchUsers = async () => {
-      try {
-        // Try to fetch with orderBy first
-        const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
-        unsubscribe = onSnapshot(
-          q,
-          (snapshot) => {
-            const mapped = snapshot.docs.map((docSnap) => {
-              const data = docSnap.data();
-              return {
-                id: docSnap.id,
-                displayName: data.displayName || "Unknown user",
-                email: data.email,
-                isPaid: data.isPaid ?? false,
-                hasGlobalAccess: data.hasGlobalAccess ?? false,
-                purchasedModules: data.purchasedModules || {},
-                createdAt: data.createdAt?.toDate?.(),
-              } as ManagedUser;
-            });
-            setUsers(mapped);
-          },
-          (error) => {
-            // If orderBy fails (e.g., missing createdAt or index), fetch without orderBy
-            console.warn("Could not order by createdAt, fetching all users:", error);
-            const fallbackQuery = collection(db, "users");
-            unsubscribe = onSnapshot(fallbackQuery, (snapshot) => {
-              const mapped = snapshot.docs.map((docSnap) => {
-                const data = docSnap.data();
-                return {
-                  id: docSnap.id,
-                  displayName: data.displayName || "Unknown user",
-                  email: data.email,
-                  isPaid: data.isPaid ?? false,
-                  hasGlobalAccess: data.hasGlobalAccess ?? false,
-                  purchasedModules: data.purchasedModules || {},
-                  createdAt: data.createdAt?.toDate?.(),
-                } as ManagedUser;
-              });
-              // Sort client-side by createdAt if available, otherwise by ID
-              mapped.sort((a, b) => {
-                if (a.createdAt && b.createdAt) {
-                  return b.createdAt.getTime() - a.createdAt.getTime(); // Descending
-                }
-                return b.id.localeCompare(a.id); // Fallback to ID
-              });
-              setUsers(mapped);
-            });
-          }
-        );
-      } catch (error) {
-        console.error("Error setting up users query:", error);
-        // Fallback: fetch without orderBy
-        const fallbackQuery = collection(db, "users");
-        unsubscribe = onSnapshot(fallbackQuery, (snapshot) => {
-          const mapped = snapshot.docs.map((docSnap) => {
-            const data = docSnap.data();
-            return {
-              id: docSnap.id,
-              displayName: data.displayName || "Unknown user",
-              email: data.email,
-              isPaid: data.isPaid ?? false,
-              hasGlobalAccess: data.hasGlobalAccess ?? false,
-              purchasedModules: data.purchasedModules || {},
-              createdAt: data.createdAt?.toDate?.(),
-            } as ManagedUser;
-          });
-          // Sort client-side by createdAt if available, otherwise by ID
-          mapped.sort((a, b) => {
-            if (a.createdAt && b.createdAt) {
-              return b.createdAt.getTime() - a.createdAt.getTime(); // Descending
-            }
-            return b.id.localeCompare(a.id); // Fallback to ID
-          });
-          setUsers(mapped);
-        });
+    const setupUserListener = () => {
+      // Clean up previous listener if exists
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
       }
+
+      const processSnapshot = (snapshot: any) => {
+        // Map documents to user objects
+        const mapped = snapshot.docs.map((docSnap: any) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            displayName: data.displayName || "Unknown user",
+            email: data.email,
+            isPaid: data.isPaid ?? false,
+            hasGlobalAccess: data.hasGlobalAccess ?? false,
+            purchasedModules: data.purchasedModules || {},
+            createdAt: data.createdAt?.toDate?.(),
+          } as ManagedUser;
+        });
+        
+        // Sort client-side by createdAt if available, otherwise by ID
+        mapped.sort((a, b) => {
+          if (a.createdAt && b.createdAt) {
+            return b.createdAt.getTime() - a.createdAt.getTime(); // Descending
+          }
+          return b.id.localeCompare(a.id); // Fallback to ID
+        });
+        
+        // Always update users state, even if empty (handles deletions)
+        setUsers(mapped);
+      };
+
+      // Try to fetch with orderBy first
+      const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
+      unsubscribe = onSnapshot(
+        q,
+        processSnapshot,
+        (error) => {
+          // If orderBy fails (e.g., missing createdAt or index), fetch without orderBy
+          console.warn("Could not order by createdAt, fetching all users:", error);
+          
+          // Clean up previous listener
+          if (unsubscribe) {
+            unsubscribe();
+          }
+          
+          // Setup fallback query without orderBy
+          const fallbackQuery = collection(db, "users");
+          unsubscribe = onSnapshot(fallbackQuery, processSnapshot, (fallbackError) => {
+            console.error("Error fetching users:", fallbackError);
+            // Set empty array on error to clear stale data
+            setUsers([]);
+          });
+        }
+      );
     };
 
-    fetchUsers();
+    setupUserListener();
 
     return () => {
       if (unsubscribe) {
         unsubscribe();
+        unsubscribe = null;
       }
     };
   }, []);
