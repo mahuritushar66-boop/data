@@ -742,7 +742,7 @@ const QuestionDetail = () => {
                     });
                   }
                 }}
-                className="flex items-center gap-2 border-primary/50 hover:bg-transparent hover:border-primary/50 cursor-pointer"
+                className="flex items-center gap-2 border-primary/50 bg-transparent hover:bg-transparent hover:border-primary/50 text-foreground hover:text-foreground cursor-pointer"
               >
                 <ArrowRight className="h-4 w-4" />
                 Next Question

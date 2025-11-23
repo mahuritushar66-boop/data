@@ -74,6 +74,8 @@ type ManagedUser = {
   displayName?: string;
   email?: string;
   isPaid?: boolean;
+  hasGlobalAccess?: boolean;
+  purchasedModules?: Record<string, boolean>;
   createdAt?: Date;
 };
 
@@ -344,21 +346,93 @@ const AdminDashboard = () => {
   }, [modulePricing]);
 
   useEffect(() => {
-    const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const mapped = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          displayName: data.displayName || "Unknown user",
-          email: data.email,
-          isPaid: data.isPaid ?? false,
-          createdAt: data.createdAt?.toDate?.(),
-        } as ManagedUser;
-      });
-      setUsers(mapped);
-    });
-    return unsubscribe;
+    let unsubscribe: (() => void) | null = null;
+    
+    const fetchUsers = async () => {
+      try {
+        // Try to fetch with orderBy first
+        const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
+        unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const mapped = snapshot.docs.map((docSnap) => {
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                displayName: data.displayName || "Unknown user",
+                email: data.email,
+                isPaid: data.isPaid ?? false,
+                hasGlobalAccess: data.hasGlobalAccess ?? false,
+                purchasedModules: data.purchasedModules || {},
+                createdAt: data.createdAt?.toDate?.(),
+              } as ManagedUser;
+            });
+            setUsers(mapped);
+          },
+          (error) => {
+            // If orderBy fails (e.g., missing createdAt or index), fetch without orderBy
+            console.warn("Could not order by createdAt, fetching all users:", error);
+            const fallbackQuery = collection(db, "users");
+            unsubscribe = onSnapshot(fallbackQuery, (snapshot) => {
+              const mapped = snapshot.docs.map((docSnap) => {
+                const data = docSnap.data();
+                return {
+                  id: docSnap.id,
+                  displayName: data.displayName || "Unknown user",
+                  email: data.email,
+                  isPaid: data.isPaid ?? false,
+                  hasGlobalAccess: data.hasGlobalAccess ?? false,
+                  purchasedModules: data.purchasedModules || {},
+                  createdAt: data.createdAt?.toDate?.(),
+                } as ManagedUser;
+              });
+              // Sort client-side by createdAt if available, otherwise by ID
+              mapped.sort((a, b) => {
+                if (a.createdAt && b.createdAt) {
+                  return b.createdAt.getTime() - a.createdAt.getTime(); // Descending
+                }
+                return b.id.localeCompare(a.id); // Fallback to ID
+              });
+              setUsers(mapped);
+            });
+          }
+        );
+      } catch (error) {
+        console.error("Error setting up users query:", error);
+        // Fallback: fetch without orderBy
+        const fallbackQuery = collection(db, "users");
+        unsubscribe = onSnapshot(fallbackQuery, (snapshot) => {
+          const mapped = snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              displayName: data.displayName || "Unknown user",
+              email: data.email,
+              isPaid: data.isPaid ?? false,
+              hasGlobalAccess: data.hasGlobalAccess ?? false,
+              purchasedModules: data.purchasedModules || {},
+              createdAt: data.createdAt?.toDate?.(),
+            } as ManagedUser;
+          });
+          // Sort client-side by createdAt if available, otherwise by ID
+          mapped.sort((a, b) => {
+            if (a.createdAt && b.createdAt) {
+              return b.createdAt.getTime() - a.createdAt.getTime(); // Descending
+            }
+            return b.id.localeCompare(a.id); // Fallback to ID
+          });
+          setUsers(mapped);
+        });
+      }
+    };
+
+    fetchUsers();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -583,6 +657,22 @@ const AdminDashboard = () => {
       return user.displayName?.toLowerCase().includes(term) || user.email?.toLowerCase().includes(term);
     });
   }, [userSearch, users]);
+
+  // Helper function to get module name from pricing doc ID
+  const getModuleNameFromDocId = (docId: string): string => {
+    // Try to find the module name from modulePricing keys
+    for (const [moduleTitle, _] of Object.entries(modulePricing)) {
+      if (getModulePricingDocId(moduleTitle) === docId) {
+        return moduleTitle;
+      }
+    }
+    // If not found, try to decode the docId (it's URL encoded)
+    try {
+      return decodeURIComponent(docId);
+    } catch {
+      return docId; // Fallback to docId if decoding fails
+    }
+  };
 
   // Get unique titles for combobox
   const uniqueTitles = useMemo(() => {
@@ -2639,44 +2729,93 @@ const AdminDashboard = () => {
         {filteredUsers.length === 0 ? (
           <p className="text-sm text-muted-foreground">No users found.</p>
         ) : (
-          filteredUsers.map((user) => (
-            <div
-              key={user.id}
-              className="border border-border rounded-lg p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
-            >
-              <div>
-                <p className="font-semibold">{user.displayName}</p>
-                <p className="text-sm text-muted-foreground">{user.email}</p>
+          filteredUsers.map((user) => {
+            const hasGlobalAccess = user.hasGlobalAccess || user.isPaid;
+            const purchasedModules = user.purchasedModules || {};
+            const purchasedModuleKeys = Object.keys(purchasedModules).filter(key => purchasedModules[key]);
+            const hasAnyPayment = hasGlobalAccess || purchasedModuleKeys.length > 0;
+            
+            // Convert module pricing doc IDs to readable module names
+            const purchasedModuleNames = purchasedModuleKeys.map(docId => 
+              getModuleNameFromDocId(docId)
+            );
+
+            return (
+              <div
+                key={user.id}
+                className="border border-border rounded-lg p-4 space-y-3"
+              >
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="font-semibold">{user.displayName}</p>
+                    <p className="text-sm text-muted-foreground">{user.email}</p>
+                    {user.createdAt && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Joined: {user.createdAt.toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Badge 
+                      variant={hasAnyPayment ? "default" : "outline"} 
+                      className="uppercase tracking-wide"
+                    >
+                      {hasGlobalAccess ? "Global Access" : hasAnyPayment ? "Module Access" : "Free Access"}
+                    </Badge>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => toggleUserPaidStatus(user)}
+                      disabled={updatingUserId === user.id}
+                    >
+                      {updatingUserId === user.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Updating...
+                        </>
+                      ) : user.isPaid ? (
+                        <>
+                          <Lock className="mr-2 h-4 w-4" />
+                          Revoke Premium
+                        </>
+                      ) : (
+                        <>
+                          <Unlock className="mr-2 h-4 w-4" />
+                          Grant Premium
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                
+                {/* Payment Information */}
+                {hasAnyPayment && (
+                  <div className="pt-3 border-t border-border/50 space-y-2">
+                    {hasGlobalAccess && (
+                      <div className="flex items-center gap-2">
+                        <Badge variant="default" className="bg-primary text-primary-foreground">
+                          Global Access
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">Access to all modules</span>
+                      </div>
+                    )}
+                    {purchasedModuleNames.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">Purchased Modules:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {purchasedModuleNames.map((moduleName, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs">
+                              {moduleName}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-3">
-                <Badge variant={user.isPaid ? "default" : "outline"} className="uppercase tracking-wide">
-                  {user.isPaid ? "Paid Access" : "Free Access"}
-                </Badge>
-                <Button 
-                  variant="outline" 
-                  onClick={() => toggleUserPaidStatus(user)}
-                  disabled={updatingUserId === user.id}
-                >
-                  {updatingUserId === user.id ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Updating...
-                    </>
-                  ) : user.isPaid ? (
-                    <>
-                      <Lock className="mr-2 h-4 w-4" />
-                      Revoke Premium
-                    </>
-                  ) : (
-                    <>
-                      <Unlock className="mr-2 h-4 w-4" />
-                      Grant Premium
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

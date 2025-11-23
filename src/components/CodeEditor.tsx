@@ -196,44 +196,8 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const getInitialCode = useMemo(() => {
     if (defaultValue) return defaultValue;
     
-    const commentPrefix = getCommentPrefix(language);
+    // Don't add question text to the compiler - just add starter code
     let initialCode = "";
-    
-    if (question) {
-      // Remove JSON blocks from question text before adding as comments
-      // This prevents JSON table definitions from appearing in the editor
-      let cleanedQuestion = question;
-      
-      // Remove JSON blocks that match table structure pattern
-      cleanedQuestion = cleanedQuestion.replace(/\{[\s\S]*?"columns"[\s\S]*?"values"[\s\S]*?\}/g, '');
-      
-      // Remove any remaining standalone JSON-like structures
-      cleanedQuestion = cleanedQuestion.replace(/\{[^{}]*\}/g, '');
-      
-      // Clean up extra whitespace
-      cleanedQuestion = cleanedQuestion.replace(/\n{3,}/g, '\n\n').trim();
-      
-      // Add question text as comments (without JSON blocks)
-      if (cleanedQuestion) {
-        const questionLines = cleanedQuestion.split("\n")
-          .map(line => line.trim())
-          .filter(line => line.length > 0)
-          .map(line => `${commentPrefix} ${line}`)
-          .join("\n");
-        const solutionPrompt = language === "sql" 
-          ? `${commentPrefix} Write your SQL solution below:`
-          : `${commentPrefix} Write your ${language} solution below:`;
-        initialCode = `${questionLines}\n\n${solutionPrompt}\n`;
-      } else {
-        // If question was only JSON, just add the prompt
-        const solutionPrompt = language === "sql" 
-          ? `${commentPrefix} Write your SQL solution below:`
-          : `${commentPrefix} Write your ${language} solution below:`;
-        initialCode = `${solutionPrompt}\n`;
-      }
-    } else {
-      initialCode = `${commentPrefix} Write your ${language} code here\n`;
-    }
     
     // Add starter code - for SQL, use the first table name from parsed questionTables
     let firstTableName: string | undefined;
@@ -255,7 +219,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         }
       }
     }
-    initialCode += getStarterCode(language, firstTableName);
+    initialCode = getStarterCode(language, firstTableName);
     return initialCode;
   }, [defaultValue, question, language, sqlTableNames, questionTables]);
 
