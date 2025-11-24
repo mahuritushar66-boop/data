@@ -645,18 +645,6 @@ const QuestionDetail = () => {
       <div className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border h-16">
         <div className="container mx-auto px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                const slug = question?.title ? encodeURIComponent(question.title) : "General";
-                navigate(`/interview-prep/module/${slug}`);
-              }}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to module
-            </Button>
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
@@ -723,6 +711,20 @@ const QuestionDetail = () => {
               {question.questionTitle || "Interview Question"}
             </h1>
             <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const moduleTitle = question.title || "General";
+                  navigate(`/interview-prep/module/${encodeURIComponent(moduleTitle)}`);
+                }}
+                className="flex items-center gap-2 border-primary/50 bg-transparent hover:bg-transparent hover:border-primary/50 text-foreground hover:text-foreground cursor-pointer"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to module
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -796,10 +798,14 @@ const QuestionDetail = () => {
         >
           {/* Left Panel: Question - Scrollable */}
           <div 
-            className="flex flex-col bg-background transition-none lg:overflow-y-auto custom-scrollbar"
-            style={{ width: isDesktop ? `${leftPanelWidth}%` : '100%' }}
+            className="flex flex-col bg-background transition-none"
+            style={{ 
+              width: isDesktop ? `${leftPanelWidth}%` : '100%',
+              height: isDesktop ? 'calc(100vh - 140px)' : 'auto',
+              maxHeight: isDesktop ? 'calc(100vh - 140px)' : 'none'
+            }}
           >
-            <div className="px-4 lg:px-6 pb-3 border-b border-border/30">
+            <div className="px-4 lg:px-6 pb-3 border-b border-border/30 flex-shrink-0">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="bg-transparent h-auto p-0 gap-1">
                   <TabsTrigger value="question" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2">
@@ -831,7 +837,7 @@ const QuestionDetail = () => {
               </Tabs>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 lg:px-6 py-4">
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 lg:px-6 py-4 min-h-0">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsContent value="question" className="mt-0">
                   {renderQuestionContent(question.question)}
@@ -948,14 +954,14 @@ const QuestionDetail = () => {
             </div>
           )}
 
-          {/* Right Panel: Code Editor and Output - Fixed */}
+          {/* Right Panel: Code Editor and Output - Fixed (No Scroll) */}
           <div 
             data-right-panel
-            className="flex flex-col bg-background lg:sticky lg:top-[80px] lg:self-start"
+            className="flex flex-col bg-background lg:sticky lg:top-[80px] lg:self-start overflow-hidden"
             style={{ 
               width: isDesktop ? `${100 - leftPanelWidth}%` : '100%',
-              height: isDesktop ? 'calc(100vh - 120px)' : 'auto',
-              maxHeight: isDesktop ? 'calc(100vh - 120px)' : 'none'
+              height: isDesktop ? 'calc(100vh - 140px)' : 'auto',
+              maxHeight: isDesktop ? 'calc(100vh - 140px)' : 'none'
             }}
           >
             {currentUser ? (

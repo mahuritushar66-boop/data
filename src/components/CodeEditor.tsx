@@ -91,13 +91,15 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
       console.log("Admin-provided table names:", adminTableNamesList);
       console.log("Mentioned tables:", mentionedTables);
       
-      // Priority: 1. Admin-provided names, 2. JSON table name, 3. Mentioned tables, 4. Fallback
+      // Priority: 1. Admin-provided names (ALWAYS use if provided), 2. JSON table name, 3. Mentioned tables, 4. Fallback
       let rawName: string | undefined;
       
-      // First priority: Use admin-provided table names if available
-      if (adminTableNamesList.length > 0 && tables.length < adminTableNamesList.length) {
-        rawName = adminTableNamesList[tables.length];
-        console.log("Using admin-provided table name (priority 1):", rawName);
+      // First priority: ALWAYS use admin-provided table names if available (even if only one table and one name)
+      if (adminTableNamesList.length > 0) {
+        // Use the corresponding admin name for this table index, or the first one if we have more tables than names
+        const adminNameIndex = Math.min(tables.length, adminTableNamesList.length - 1);
+        rawName = adminTableNamesList[adminNameIndex];
+        console.log("Using admin-provided table name (priority 1):", rawName, "for table index:", tables.length);
       } else {
         // Second priority: Try to get table name from JSON
         rawName =
@@ -868,54 +870,16 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             const { columns, values } = result[0];
             const outputData = { columns, values };
             setOutput(outputData);
-            
-            // Validate output if expectedOutput is provided
-            if (expectedOutput) {
-              const validation = compareOutputs(outputData, expectedOutput);
-              setValidationResult(validation);
-              console.log("Validation result:", validation);
-              if (validation.passed) {
-                toast({
-                  title: "✓ Solution Correct!",
-                  description: validation.message || "Your output matches the expected result.",
-                });
-                // Track completion and award XP
-                if (questionId && currentUser) {
-                  console.log("Tracking completion for questionId:", questionId, "userId:", currentUser.uid);
-                  try {
-                    const xpAwarded = await trackQuestionCompletion(questionId);
-                    console.log("XP awarded result:", xpAwarded);
-                    if (xpAwarded) {
-                      console.log("Setting showXpModal to true");
-                      setShowXpModal(true);
-                    } else {
-                      console.warn("XP not awarded, check trackQuestionCompletion logs above for details");
-                    }
-                  } catch (error) {
-                    console.error("Error in trackQuestionCompletion:", error);
-                  }
-                } else {
-                  console.log("Cannot track completion - questionId:", questionId, "currentUser:", !!currentUser);
-                }
-              } else {
-                toast({
-                  title: "Solution Incorrect",
-                  description: "Your output is not matching the expected Output",
-                  variant: "destructive",
-                });
-              }
-            } else {
-              toast({
-                title: "Query executed successfully",
-                description: `Returned ${values.length} row(s).`,
-              });
-            }
+            // Clear validation result when just running code
+            setValidationResult(null);
+            toast({
+              title: "Query executed successfully",
+              description: `Returned ${values.length} row(s).`,
+            });
           } else {
             setOutput({ columns: [], values: [] });
-            if (expectedOutput) {
-              const validation = compareOutputs({ columns: [], values: [] }, expectedOutput);
-              setValidationResult(validation);
-            }
+            // Clear validation result when just running code
+            setValidationResult(null);
             toast({
               title: "Query executed",
               description: "No results returned.",
@@ -959,36 +923,12 @@ sys.stdout = StringIO()
 
         const finalOutput = outputText || "(No output)";
         setTextOutput(finalOutput);
-        
-        // Validate output if expectedOutput is provided
-        if (expectedOutput) {
-          const validation = compareOutputs(finalOutput, expectedOutput);
-          setValidationResult(validation);
-          if (validation.passed) {
-            toast({
-              title: "✓ Solution Correct!",
-              description: validation.message || "Your output matches the expected result.",
-            });
-            // Track completion and award XP
-            if (questionId) {
-              const xpAwarded = await trackQuestionCompletion(questionId);
-              if (xpAwarded) {
-                setShowXpModal(true);
-              }
-            }
-          } else {
-            toast({
-              title: "Solution Incorrect",
-              description: "Your output is not matching the expected Output",
-              variant: "destructive",
-            });
-          }
-        } else {
-          toast({
-            title: "Code executed",
-            description: outputText ? "Check the output below." : "Code ran successfully with no output.",
-          });
-        }
+        // Clear validation result when just running code
+        setValidationResult(null);
+        toast({
+          title: "Code executed",
+          description: outputText ? "Check the output below." : "Code ran successfully with no output.",
+        });
       } else if (language === "javascript") {
         // Execute JavaScript code
         try {
@@ -1028,35 +968,12 @@ sys.stdout = StringIO()
           
           const finalOutput = outputText || "(No output)";
           setTextOutput(finalOutput);
-          
-          // Validate output if expectedOutput is provided
-          if (expectedOutput) {
-            const validation = compareOutputs(finalOutput, expectedOutput);
-            setValidationResult(validation);
-            if (validation.passed) {
-              toast({
-                title: "✓ Solution Correct!",
-                description: validation.message || "Your output matches the expected result.",
-              });
-              if (questionId) {
-                const xpAwarded = await trackQuestionCompletion(questionId);
-                if (xpAwarded) {
-                  setShowXpModal(true);
-                }
-              }
-            } else {
-              toast({
-                title: "Solution Incorrect",
-                description: validation.message || "Your output doesn't match the expected result.",
-                variant: "destructive",
-              });
-            }
-          } else {
-            toast({
-              title: "Code executed",
-              description: outputText ? "Check the output below." : "Code ran successfully with no output.",
-            });
-          }
+          // Clear validation result when just running code
+          setValidationResult(null);
+          toast({
+            title: "Code executed",
+            description: outputText ? "Check the output below." : "Code ran successfully with no output.",
+          });
         } catch (error: any) {
           setTextOutput(`Error: ${error.message || String(error)}\n\nStack trace:\n${error.stack || 'No stack trace available'}`);
           toast({
@@ -1110,35 +1027,12 @@ sys.stdout = StringIO()
           
           const finalOutput = outputText || "(No output)\n\nNote: TypeScript is executed as JavaScript. Full type checking is not performed.";
           setTextOutput(finalOutput);
-          
-          // Validate output if expectedOutput is provided
-          if (expectedOutput) {
-            const validation = compareOutputs(finalOutput, expectedOutput);
-            setValidationResult(validation);
-            if (validation.passed) {
-              toast({
-                title: "✓ Solution Correct!",
-                description: validation.message || "Your output matches the expected result.",
-              });
-              if (questionId) {
-                const xpAwarded = await trackQuestionCompletion(questionId);
-                if (xpAwarded) {
-                  setShowXpModal(true);
-                }
-              }
-            } else {
-              toast({
-                title: "Solution Incorrect",
-                description: validation.message || "Your output doesn't match the expected result.",
-                variant: "destructive",
-              });
-            }
-          } else {
-            toast({
-              title: "Code executed",
-              description: "TypeScript executed as JavaScript. Full type checking not available.",
-            });
-          }
+          // Clear validation result when just running code
+          setValidationResult(null);
+          toast({
+            title: "Code executed",
+            description: "TypeScript executed as JavaScript. Full type checking not available.",
+          });
         } catch (error: any) {
           setTextOutput(`Error: ${error.message || String(error)}\n\nStack trace:\n${error.stack || 'No stack trace available'}\n\nNote: TypeScript is executed as JavaScript.`);
           toast({
@@ -1185,43 +1079,19 @@ sys.stdout = StringIO()
           
           const finalOutput = outputText || "(No output)";
           setTextOutput(finalOutput);
-          
-          // Validate output if expectedOutput is provided
-          if (expectedOutput) {
-            const validation = compareOutputs(finalOutput, expectedOutput);
-            setValidationResult(validation);
-            if (validation.passed) {
-              toast({
-                title: "✓ Solution Correct!",
-                description: validation.message || "Your output matches the expected result.",
-              });
-              // Track completion and award XP
-              if (questionId) {
-                const xpAwarded = await trackQuestionCompletion(questionId);
-                if (xpAwarded) {
-                  setShowXpModal(true);
-                }
-              }
-            } else {
-              toast({
-                title: "Solution Incorrect",
-                description: validation.message || "Your output doesn't match the expected result.",
-                variant: "destructive",
-              });
-            }
+          // Clear validation result when just running code
+          setValidationResult(null);
+          if (result.error) {
+            toast({
+              title: result.error.includes("Compilation") ? "Compilation Error" : "Execution Error",
+              description: result.error,
+              variant: "destructive",
+            });
           } else {
-            if (result.error) {
-              toast({
-                title: result.error.includes("Compilation") ? "Compilation Error" : "Execution Error",
-                description: result.error,
-                variant: "destructive",
-              });
-            } else {
-              toast({
-                title: "Code executed successfully",
-                description: result.time ? `Execution time: ${result.time}s` : "Check the output below.",
-              });
-            }
+            toast({
+              title: "Code executed successfully",
+              description: result.time ? `Execution time: ${result.time}s` : "Check the output below.",
+            });
           }
         } catch (error: any) {
           setTextOutput(`Error: ${error.message || String(error)}\n\nPlease check your Judge0 API configuration.`);
@@ -1373,8 +1243,7 @@ sys.stdout = StringIO()
                 onClick={handleCheckAnswer}
                 disabled={loading || (language === "sql" && !db) || (language === "python" && !pyodide)}
                 size="sm"
-                variant="outline"
-                className="gap-2 text-sm h-9 px-4 border-primary/50 hover:bg-primary/10 hover:border-primary text-primary"
+                className="gap-2 text-sm h-9 px-4 bg-green-600 hover:bg-green-700 text-white shadow-md hover:shadow-lg transition-all"
                 title="Run code and check if output matches expected result"
               >
                 {loading ? (

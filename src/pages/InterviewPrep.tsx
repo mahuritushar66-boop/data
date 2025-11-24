@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { Layers, Code2, BookOpen, ArrowRight, Database, Brain, Box, Flame } from "lucide-react";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 
 type InterviewQuestion = {
@@ -34,6 +34,7 @@ const InterviewPrep = () => {
 
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [moduleOrder, setModuleOrder] = useState<string[]>([]);
 
   // Scroll to top when component mounts
   useEffect(() => {
@@ -78,6 +79,24 @@ const InterviewPrep = () => {
     return unsubscribe;
   }, [toast]);
 
+  // Load module order
+  useEffect(() => {
+    const orderDocRef = doc(db, "moduleOrder", "order");
+    const unsubscribe = onSnapshot(
+      orderDocRef,
+      (snapshot) => {
+        if (snapshot.exists() && snapshot.data().order) {
+          setModuleOrder(snapshot.data().order as string[]);
+        }
+      },
+      (error) => {
+        console.warn("Could not load module order:", error);
+        // Continue without order - will use alphabetical fallback
+      }
+    );
+    return unsubscribe;
+  }, []);
+
   const moduleSummaries = useMemo<ModuleSummary[]>(() => {
     const map = new Map<string, ModuleSummary>();
     questions.forEach((q) => {
@@ -90,8 +109,29 @@ const InterviewPrep = () => {
       if (q.tier === "free") summary.freeCount += 1;
       else summary.premiumCount += 1;
     });
-    return Array.from(map.values()).sort((a, b) => a.title.localeCompare(b.title));
-  }, [questions]);
+    const summaries = Array.from(map.values());
+    
+    // Sort by module order if available, otherwise alphabetically
+    if (moduleOrder.length > 0) {
+      summaries.sort((a, b) => {
+        const indexA = moduleOrder.indexOf(a.title);
+        const indexB = moduleOrder.indexOf(b.title);
+        // If both are in order, sort by order index
+        if (indexA !== -1 && indexB !== -1) {
+          return indexA - indexB;
+        }
+        // If only one is in order, prioritize it
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+        // If neither is in order, sort alphabetically
+        return a.title.localeCompare(b.title);
+      });
+    } else {
+      summaries.sort((a, b) => a.title.localeCompare(b.title));
+    }
+    
+    return summaries;
+  }, [questions, moduleOrder]);
 
   const handleOpenModule = (title: string) => {
     const slug = encodeURIComponent(title);

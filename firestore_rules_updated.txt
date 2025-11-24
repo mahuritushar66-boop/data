@@ -1,0 +1,78 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function onlyUpdatesAllowedFields(allowedFields) {
+      return request.resource.data.keys().hasOnly(allowedFields)
+        && resource.data.keys().hasOnly(allowedFields)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+    }
+
+    match /interviewQuestions/{questionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /blogPosts/{postId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /caseStudies/{studyId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /projects/{projectId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /modulePricing/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /moduleOrder/{orderId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      // Allow users to create their own profile (on first login)
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // Allow users to update their own profile fields and XP
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && onlyUpdatesAllowedFields(['displayName','linkedinUrl','updatedAt','xp']);
+      // Admins can read/write any user
+      allow read, write: if isAdmin();
+    }
+
+    match /userQuestionSubmissions/{submissionId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.userId;
+      allow update, delete: if request.auth != null
+        && request.auth.uid == resource.data.userId;
+    }
+
+    match /testimonials/{testimonialId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
+

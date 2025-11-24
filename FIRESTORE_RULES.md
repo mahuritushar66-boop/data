@@ -77,6 +77,20 @@ service cloud.firestore {
       // Allow delete if user is deleting their own submission
       allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
+    
+    // Module order collection - public read, admin write
+    match /moduleOrder/{orderId} {
+      allow read: if true; // Public read access for module ordering
+      allow write: if request.auth != null && 
+                   get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    // Module pricing collection - public read, admin write
+    match /modulePricing/{pricingId} {
+      allow read: if true; // Public read access for module pricing
+      allow write: if request.auth != null && 
+                   get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
   }
 }
 ```
@@ -90,6 +104,8 @@ service cloud.firestore {
    - `caseStudies` - All case studies
    - `projects` - All projects
    - `testimonials` - All learner reviews
+   - `moduleOrder` - Module ordering configuration
+   - `modulePricing` - Module pricing information
 
 2. **Admin Write Access**: Only authenticated admin users can write to these collections.
 

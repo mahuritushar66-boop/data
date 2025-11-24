@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, LogOut, Plus, Edit, Trash2, Lock, Unlock, Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, LayoutDashboard, FileText, FolderOpen, Newspaper, Settings, UserCheck, Loader2, Layers, Menu, Quote } from "lucide-react";
+import { ShieldCheck, LogOut, Plus, Edit, Trash2, Lock, Unlock, Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, LayoutDashboard, FileText, FolderOpen, Newspaper, Settings, UserCheck, Loader2, Layers, Menu, Quote, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import {
   Dialog,
@@ -30,6 +30,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -126,7 +127,7 @@ type Service = {
   ctaLabel?: string;
   ctaUrl?: string;
 };
-type AdminSection = "questions" | "case-studies" | "projects" | "blog" | "services" | "users" | "testimonials";
+type AdminSection = "questions" | "case-studies" | "projects" | "blog" | "services" | "users" | "testimonials" | "module-order";
 
 type Testimonial = {
   id: string;
@@ -173,8 +174,13 @@ const AdminDashboard = () => {
   const [globalModulePrice, setGlobalModulePrice] = useState<string>(String(DEFAULT_GLOBAL_PRICE));
   const [savingModulePrice, setSavingModulePrice] = useState<string | null>(null);
   const [savingGlobalPrice, setSavingGlobalPrice] = useState(false);
+  const [moduleOrder, setModuleOrder] = useState<string[]>([]);
+  const [savingModuleOrder, setSavingModuleOrder] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [questionSearch, setQuestionSearch] = useState("");
+  const [questionTierFilter, setQuestionTierFilter] = useState<"all" | "free" | "paid">("all");
+  const [questionDifficultyFilter, setQuestionDifficultyFilter] = useState<"all" | "easy" | "medium" | "hard">("all");
+  const [questionCompanyFilter, setQuestionCompanyFilter] = useState<string>("all");
   const [titleSearchOpen, setTitleSearchOpen] = useState(false);
   const [expectedOutputHelperOpen, setExpectedOutputHelperOpen] = useState(false);
   const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([]);
@@ -332,6 +338,7 @@ const AdminDashboard = () => {
     });
     return unsubscribe;
   }, []);
+
 
   useEffect(() => {
     setModulePricingInputs((prev) => {
@@ -667,20 +674,98 @@ const AdminDashboard = () => {
     return Array.from(titles).sort();
   }, [questions]);
 
+  // Initialize module order from questions (not just pricing)
+  useEffect(() => {
+    // Get all unique module titles from questions
+    const moduleTitles = uniqueTitles;
+    
+    if (moduleTitles.length === 0) {
+      if (moduleOrder.length > 0) {
+        setModuleOrder([]);
+      }
+      return;
+    }
+
+    // Only initialize once when moduleOrder is empty
+    if (moduleOrder.length === 0) {
+      // Try to load from Firestore first
+      const orderDocRef = doc(db, "moduleOrder", "order");
+      getDoc(orderDocRef).then((orderDoc) => {
+        if (orderDoc.exists() && orderDoc.data().order) {
+          const savedOrder = orderDoc.data().order as string[];
+          // Merge saved order with current modules (add new modules at the end)
+          const mergedOrder = [
+            ...savedOrder.filter((title) => moduleTitles.includes(title)),
+            ...moduleTitles.filter((title) => !savedOrder.includes(title)),
+          ];
+          setModuleOrder(mergedOrder);
+        } else {
+          setModuleOrder([...moduleTitles]);
+        }
+      }).catch(() => {
+        setModuleOrder([...moduleTitles]);
+      });
+    } else {
+      // Update order when new modules are added (add new ones at the end)
+      const newModules = moduleTitles.filter((title) => !moduleOrder.includes(title));
+      if (newModules.length > 0) {
+        setModuleOrder((prev) => [...prev, ...newModules]);
+      }
+      // Remove modules that no longer exist
+      const filteredOrder = moduleOrder.filter((title) => moduleTitles.includes(title));
+      if (filteredOrder.length !== moduleOrder.length) {
+        setModuleOrder(filteredOrder);
+      }
+    }
+  }, [uniqueTitles.join(',')]); // Use join to create a stable dependency, removed moduleOrder.length to avoid infinite loop
+
+  // Get unique companies for filter
+  const uniqueCompanies = useMemo(() => {
+    const companies = new Set<string>();
+    questions.forEach((q) => {
+      if (q.company?.trim()) {
+        companies.add(q.company.trim());
+      }
+    });
+    return Array.from(companies).sort();
+  }, [questions]);
+
   // Filter questions
   const filteredQuestions = useMemo(() => {
-    if (!questionSearch.trim()) return questions;
-    const term = questionSearch.toLowerCase();
-    return questions.filter((q) => {
-      return (
-        q.title?.toLowerCase().includes(term) ||
-        q.question?.toLowerCase().includes(term) ||
-        q.answer?.toLowerCase().includes(term) ||
-        q.company?.toLowerCase().includes(term) ||
-        q.difficulty?.toLowerCase().includes(term)
-      );
-    });
-  }, [questionSearch, questions]);
+    let filtered = questions;
+    
+    // Search filter
+    if (questionSearch.trim()) {
+      const term = questionSearch.toLowerCase();
+      filtered = filtered.filter((q) => {
+        return (
+          q.title?.toLowerCase().includes(term) ||
+          q.question?.toLowerCase().includes(term) ||
+          q.answer?.toLowerCase().includes(term) ||
+          q.company?.toLowerCase().includes(term) ||
+          q.difficulty?.toLowerCase().includes(term) ||
+          q.questionTitle?.toLowerCase().includes(term)
+        );
+      });
+    }
+    
+    // Tier filter
+    if (questionTierFilter !== "all") {
+      filtered = filtered.filter((q) => q.tier === questionTierFilter);
+    }
+    
+    // Difficulty filter
+    if (questionDifficultyFilter !== "all") {
+      filtered = filtered.filter((q) => q.difficulty === questionDifficultyFilter);
+    }
+    
+    // Company filter
+    if (questionCompanyFilter !== "all") {
+      filtered = filtered.filter((q) => q.company === questionCompanyFilter);
+    }
+    
+    return filtered;
+  }, [questionSearch, questionTierFilter, questionDifficultyFilter, questionCompanyFilter, questions]);
 
   // Question stats
   const questionStats = useMemo(() => {
@@ -1228,6 +1313,7 @@ const AdminDashboard = () => {
     { id: "services" as AdminSection, label: "Services", icon: Settings },
     { id: "testimonials" as AdminSection, label: "Testimonials", icon: Quote },
     { id: "users" as AdminSection, label: "Learner Access", icon: UserCheck },
+    { id: "module-order" as AdminSection, label: "Module Order", icon: Layers },
   ];
 
   const getSectionDescription = (section: AdminSection): string => {
@@ -1246,6 +1332,8 @@ const AdminDashboard = () => {
         return "Collect and curate learner testimonials shown on the homepage.";
       case "users":
         return "Toggle premium access for any user after payment confirmation.";
+      case "module-order":
+        return "Manage the display order of modules on the Interview Prep page.";
       default:
         return "";
     }
@@ -1467,36 +1555,99 @@ const AdminDashboard = () => {
       </GlassCard>
 
       <GlassCard className="p-6 space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex-1 min-w-[250px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search questions by title, content, company, or difficulty..."
-                value={questionSearch}
-                onChange={(e) => setQuestionSearch(e.target.value)}
-                className="pl-10 pr-10"
-              />
-              {questionSearch && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                  onClick={() => setQuestionSearch("")}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex-1 min-w-[250px]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search questions by title, content, company, or difficulty..."
+                  value={questionSearch}
+                  onChange={(e) => setQuestionSearch(e.target.value)}
+                  className="pl-10 pr-10"
+                />
+                {questionSearch && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                    onClick={() => setQuestionSearch("")}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button onClick={openCreateDialog} className="bg-gradient-primary hover:shadow-glow-primary">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Question
+                </Button>
+              </DialogTrigger>
+            </Dialog>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={openCreateDialog} className="bg-gradient-primary hover:shadow-glow-primary">
-                <Plus className="mr-2 h-4 w-4" />
-                Add Question
+          
+          {/* Filter Section */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={questionTierFilter} onValueChange={(value) => setQuestionTierFilter(value as "all" | "free" | "paid")}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Filter by tier" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Tiers</SelectItem>
+                <SelectItem value="free">Free</SelectItem>
+                <SelectItem value="paid">Premium</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={questionDifficultyFilter} onValueChange={(value) => setQuestionDifficultyFilter(value as "all" | "easy" | "medium" | "hard")}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Filter by difficulty" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Difficulties</SelectItem>
+                <SelectItem value="easy">Easy</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="hard">Hard</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={questionCompanyFilter} onValueChange={setQuestionCompanyFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by company" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Companies</SelectItem>
+                {uniqueCompanies.map((company) => (
+                  <SelectItem key={company} value={company}>
+                    {company}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {(questionTierFilter !== "all" || questionDifficultyFilter !== "all" || questionCompanyFilter !== "all") && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setQuestionTierFilter("all");
+                  setQuestionDifficultyFilter("all");
+                  setQuestionCompanyFilter("all");
+                }}
+                className="gap-2"
+              >
+                <X className="h-4 w-4" />
+                Clear Filters
               </Button>
-            </DialogTrigger>
-          <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+            )}
+          </div>
+        </div>
+      </GlassCard>
+        
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
             <div className="p-6 pb-4 flex-shrink-0 border-b border-border">
               <DialogHeader>
                 <DialogTitle>{editingQuestion ? "Edit Question" : "Add Question"}</DialogTitle>
@@ -1771,7 +1922,6 @@ const AdminDashboard = () => {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
 
       <div className="space-y-4">
         {filteredQuestions.length === 0 ? (
@@ -1887,7 +2037,6 @@ const AdminDashboard = () => {
           </div>
         )}
       </div>
-      </GlassCard>
     </div>
   );
 
@@ -2854,6 +3003,124 @@ const AdminDashboard = () => {
     </GlassCard>
   );
 
+  const renderModuleOrderSection = () => {
+    const handleMoveUp = (index: number) => {
+      if (index === 0) return;
+      const newOrder = [...moduleOrder];
+      [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+      setModuleOrder(newOrder);
+    };
+
+    const handleMoveDown = (index: number) => {
+      if (index === moduleOrder.length - 1) return;
+      const newOrder = [...moduleOrder];
+      [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+      setModuleOrder(newOrder);
+    };
+
+    const handleSaveOrder = async () => {
+      setSavingModuleOrder(true);
+      try {
+        const orderDocRef = doc(db, "moduleOrder", "order");
+        await setDoc(orderDocRef, {
+          order: moduleOrder,
+          updatedAt: serverTimestamp(),
+        });
+        toast({
+          title: "Module order saved",
+          description: "The new order will be reflected on the Interview Prep page.",
+        });
+      } catch (error: any) {
+        toast({
+          title: "Failed to save order",
+          description: error.message || "Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setSavingModuleOrder(false);
+      }
+    };
+
+    return (
+      <GlassCard className="p-6 space-y-6">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold">Module Display Order</h2>
+          <p className="text-sm text-muted-foreground">
+            Drag modules up or down to change their display order on the Interview Prep page. Click "Save Order" to apply changes.
+          </p>
+        </div>
+
+        {moduleOrder.length === 0 ? (
+          <div className="text-center py-12">
+            <Layers className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">No modules found. Add questions with module titles first.</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {moduleOrder.map((moduleTitle, index) => (
+                <div
+                  key={moduleTitle}
+                  className="flex items-center gap-3 p-4 border border-border rounded-lg bg-background/50 hover:bg-background transition-colors"
+                >
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <GripVertical className="h-5 w-5" />
+                    <span className="text-sm font-medium w-8 text-center">{index + 1}</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold">{moduleTitle}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Price: ₹{modulePricing[moduleTitle] ?? DEFAULT_MODULE_PRICE}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleMoveUp(index)}
+                      disabled={index === 0}
+                      className="h-8 w-8"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleMoveDown(index)}
+                      disabled={index === moduleOrder.length - 1}
+                      className="h-8 w-8"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSaveOrder}
+                disabled={savingModuleOrder}
+                className="bg-gradient-primary hover:shadow-glow-primary"
+              >
+                {savingModuleOrder ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Layers className="mr-2 h-4 w-4" />
+                    Save Order
+                  </>
+                )}
+              </Button>
+            </div>
+          </>
+        )}
+      </GlassCard>
+    );
+  };
+
   const renderContent = () => {
     switch (activeSection) {
       case "questions":
@@ -2870,6 +3137,8 @@ const AdminDashboard = () => {
         return renderTestimonialsSection();
       case "users":
         return renderUsersSection();
+      case "module-order":
+        return renderModuleOrderSection();
       default:
         return renderQuestionsSection();
     }
