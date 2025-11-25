@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -40,6 +40,52 @@ const sanitizeIdentifier = (value: string, fallback: string) => {
     .replace(/_{2,}/g, "_");
   const noLeadingDigits = cleaned.replace(/^[^A-Za-z_]+/, "");
   return noLeadingDigits || fallback;
+};
+
+const isSelectLikeSql = (sql: string): boolean => {
+  if (!sql) return false;
+  const cleaned = sql
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--.*$/gm, " ")
+    .trim()
+    .toLowerCase();
+
+  if (!cleaned) return false;
+
+  const normalized = cleaned.replace(/^\(+/, "").trim();
+  const nonSelectPrefixes = [
+    "insert",
+    "update",
+    "delete",
+    "create",
+    "drop",
+    "alter",
+    "truncate",
+    "comment",
+    "grant",
+    "revoke",
+    "merge",
+    "replace",
+    "pragma",
+    "vacuum",
+    "attach",
+    "detach",
+  ];
+
+  if (nonSelectPrefixes.some((prefix) => normalized.startsWith(prefix))) {
+    return false;
+  }
+
+  if (
+    normalized.startsWith("select") ||
+    normalized.startsWith("with") ||
+    normalized.startsWith("explain select") ||
+    normalized.startsWith("explain with")
+  ) {
+    return true;
+  }
+
+  return /\bselect\b/.test(normalized);
 };
 
 const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: string): ParsedSqlTable[] => {
@@ -158,31 +204,57 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     return "#"; // Default to Python-style
   };
 
-  // Get starter code based on language
-  const getStarterCode = (lang: string, firstTableName?: string): string => {
+  const getInstructionLine = (lang: string): string => {
     switch (lang) {
       case "python":
-        return "# Write your Python solution here\nprint('Hello, World!')";
+        return "# $ Write Your Python Code below";
+      case "sql":
+        return "-- Write your MySQL query statement below";
+      case "javascript":
+        return "// Write your JavaScript code below";
+      case "typescript":
+        return "// Write your TypeScript code below";
+      case "java":
+        return "// Write your Java code below";
+      case "cpp":
+        return "// Write your C++ code below";
+      case "csharp":
+        return "// Write your C# code below";
+      case "go":
+        return "// Write your Go code below";
+      case "rust":
+        return "// Write your Rust code below";
+      default:
+        return "# Write your code below";
+    }
+  };
+
+  // Get starter code based on language
+  const getStarterCode = (lang: string, firstTableName?: string): string => {
+    const instruction = getInstructionLine(lang);
+    switch (lang) {
+      case "python":
+        return `${instruction}\nimport pandas as pd\nimport numpy as np\n\nprint('Hello, World!')`;
       case "sql":
         // Use the first available table name, or a generic one
         const tableName = firstTableName || "customers";
-        return `SELECT * FROM ${tableName} LIMIT 5;`;
+        return `${instruction}\nSELECT * FROM ${tableName} LIMIT 5;`;
       case "javascript":
-        return "// Write your JavaScript solution here\nconsole.log('Hello, World!');";
+        return `${instruction}\nconsole.log('Hello, World!');`;
       case "typescript":
-        return "// Write your TypeScript solution here\nconsole.log('Hello, World!');";
+        return `${instruction}\nconsole.log('Hello, World!');`;
       case "java":
-        return "// Write your Java solution here\npublic class Solution {\n    public static void main(String[] args) {\n        System.out.println(\"Hello, World!\");\n    }\n}";
+        return `${instruction}\npublic class Solution {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`;
       case "cpp":
-        return "// Write your C++ solution here\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << \"Hello, World!\" << endl;\n    return 0;\n}";
+        return `${instruction}\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`;
       case "csharp":
-        return "// Write your C# solution here\nusing System;\n\nclass Solution {\n    static void Main() {\n        Console.WriteLine(\"Hello, World!\");\n    }\n}";
+        return `${instruction}\nusing System;\n\nclass Solution {\n    static void Main() {\n        Console.WriteLine("Hello, World!");\n    }\n}`;
       case "go":
-        return "// Write your Go solution here\npackage main\n\nimport \"fmt\"\n\nfunc main() {\n    fmt.Println(\"Hello, World!\")\n}";
+        return `${instruction}\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, World!")\n}`;
       case "rust":
-        return "// Write your Rust solution here\nfn main() {\n    println!(\"Hello, World!\");\n}";
+        return `${instruction}\nfn main() {\n    println!("Hello, World!");\n}`;
       default:
-        return "# Write your code here";
+        return `${instruction}`;
     }
   };
 
@@ -372,6 +444,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const dbInitialized = useRef(false);
   const dbRef = useRef<Database | null>(null);
   const pyodideLoading = useRef(false);
+  const pyodidePackagesLoaded = useRef<Set<string>>(new Set());
 
   // Function to normalize and compare outputs
   const compareOutputs = (
@@ -484,6 +557,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           const pyodideInstance = await pyodideModule.loadPyodide({
             indexURL: "https://cdn.jsdelivr.net/pyodide/v0.29.0/full/",
           });
+          pyodidePackagesLoaded.current = new Set();
           setPyodide(pyodideInstance);
         } catch (error) {
           console.error("Failed to load Pyodide:", error);
@@ -791,6 +865,54 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     return code.trim();
   };
 
+  const ensurePyodidePackages = useCallback(
+    async (codeSnippet: string) => {
+      if (!pyodide) return true;
+      const snippet = codeSnippet || "";
+      const packagePatterns: Array<{ name: string; patterns: RegExp[] }> = [
+        {
+          name: "pandas",
+          patterns: [/\bimport\s+pandas\b/i, /\bfrom\s+pandas\b/i],
+        },
+        {
+          name: "numpy",
+          patterns: [/\bimport\s+numpy\b/i, /\bfrom\s+numpy\b/i],
+        },
+        {
+          name: "matplotlib",
+          patterns: [/\bimport\s+matplotlib\b/i, /\bfrom\s+matplotlib\b/i],
+        },
+      ];
+
+      const packagesToLoad = new Set<string>();
+      packagePatterns.forEach(({ name, patterns }) => {
+        if (pyodidePackagesLoaded.current.has(name)) return;
+        if (patterns.some((pattern) => pattern.test(snippet))) {
+          packagesToLoad.add(name);
+        }
+      });
+
+      if (packagesToLoad.size === 0) {
+        return true;
+      }
+
+      try {
+        await pyodide.loadPackage(Array.from(packagesToLoad));
+        packagesToLoad.forEach((pkg) => pyodidePackagesLoaded.current.add(pkg));
+        return true;
+      } catch (error) {
+        console.error("Failed to load Pyodide packages:", error);
+        toast({
+          title: "Python package unavailable",
+          description: "Required libraries could not be loaded. Please try again.",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [pyodide, toast],
+  );
+
   const handleRun = async () => {
     if (!code.trim()) {
       toast({
@@ -832,8 +954,11 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         }
 
         // Split by semicolons to handle multiple queries
-        const queries = executableCode.split(";").filter((q) => q.trim());
-        
+        const queries = executableCode
+          .split(";")
+          .map((q) => q.trim())
+          .filter((q) => q.length > 0);
+
         if (queries.length === 0) {
           toast({
             title: "No valid query",
@@ -844,50 +969,48 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           return;
         }
 
-        // Execute the last query (or all queries if needed)
-        let query = queries[queries.length - 1].trim();
-        
-        // Normalize table names in the query to match created table names (case-insensitive)
-        // This helps when user writes "FROM customers" but table was created as "customers" (lowercase)
-        // SQLite is case-insensitive for ASCII, but we normalize to be safe
-        const tableNames = availableTables;
-        tableNames.forEach(tableName => {
-          // Replace table names in FROM/JOIN clauses (case-insensitive, whole word only)
-          // Match: FROM customers, JOIN customers, customers WHERE, etc.
-          const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const regex = new RegExp(`\\b${escapedTableName}\\b`, 'gi');
-          query = query.replace(regex, `"${tableName}"`);
-        });
-        
-        console.log("Executing SQL query:", query);
-        console.log("Available tables:", tableNames);
-        
-        if (query.toLowerCase().startsWith("select")) {
-          // SELECT query - return results
-          const result = db.exec(query);
-          
-          if (result.length > 0) {
-            const { columns, values } = result[0];
-            const outputData = { columns, values };
-            setOutput(outputData);
-            // Clear validation result when just running code
-            setValidationResult(null);
-            toast({
-              title: "Query executed successfully",
-              description: `Returned ${values.length} row(s).`,
-            });
+        let lastSelectOutput: { columns: string[]; values: any[][] } | null = null;
+
+        for (const originalQuery of queries) {
+          let query = originalQuery;
+
+          // Normalize table names in the current query to match created table names (case-insensitive)
+          const tableNames = availableTables;
+          tableNames.forEach((tableName) => {
+            const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const regex = new RegExp(`\\b${escapedTableName}\\b`, "gi");
+            query = query.replace(regex, `"${tableName}"`);
+          });
+
+          console.log("Executing SQL query:", query);
+          console.log("Available tables:", tableNames);
+
+          const isSelectQuery = isSelectLikeSql(query);
+
+          if (isSelectQuery) {
+            const resultSets = db.exec(query);
+            if (resultSets.length > 0) {
+              const finalResult = resultSets[resultSets.length - 1];
+              lastSelectOutput = {
+                columns: finalResult.columns,
+                values: finalResult.values,
+              };
+            } else {
+              lastSelectOutput = { columns: [], values: [] };
+            }
           } else {
-            setOutput({ columns: [], values: [] });
-            // Clear validation result when just running code
-            setValidationResult(null);
-            toast({
-              title: "Query executed",
-              description: "No results returned.",
-            });
+            db.run(query);
           }
+        }
+
+        if (lastSelectOutput) {
+          setOutput(lastSelectOutput);
+          setValidationResult(null);
+          toast({
+            title: "Query executed successfully",
+            description: `Returned ${lastSelectOutput.values.length} row(s).`,
+          });
         } else {
-          // INSERT, UPDATE, DELETE, CREATE, etc.
-          db.run(query);
           setOutput({ columns: ["Status"], values: [["Query executed successfully"]] });
           toast({
             title: "Query executed successfully",
@@ -901,6 +1024,12 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             description: "Please wait for Python to load, then try again.",
             variant: "destructive",
           });
+          setLoading(false);
+          return;
+        }
+
+        const packagesReady = await ensurePyodidePackages(executableCode);
+        if (!packagesReady) {
           setLoading(false);
           return;
         }

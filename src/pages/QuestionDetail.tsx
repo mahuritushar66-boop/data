@@ -296,7 +296,7 @@ const QuestionDetail = () => {
   const { questionId } = useParams<{ questionId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { profile, currentUser } = useAuth();
+  const { profile, currentUser, logout } = useAuth();
   const [question, setQuestion] = useState<InterviewQuestion | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -645,6 +645,13 @@ const QuestionDetail = () => {
       <div className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border h-16">
         <div className="container mx-auto px-4 h-full flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <Link to="/" className="flex items-center space-x-2 group">
+              <img
+                src="/logo.jpg"
+                alt="BytesOfData Logo"
+                className="h-12 w-auto object-contain group-hover:opacity-80 transition-opacity"
+              />
+            </Link>
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />

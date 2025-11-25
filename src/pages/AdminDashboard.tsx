@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
@@ -181,8 +181,10 @@ const AdminDashboard = () => {
   const [questionTierFilter, setQuestionTierFilter] = useState<"all" | "free" | "paid">("all");
   const [questionDifficultyFilter, setQuestionDifficultyFilter] = useState<"all" | "easy" | "medium" | "hard">("all");
   const [questionCompanyFilter, setQuestionCompanyFilter] = useState<string>("all");
+  const [questionModuleFilter, setQuestionModuleFilter] = useState<string>("all");
   const [titleSearchOpen, setTitleSearchOpen] = useState(false);
   const [expectedOutputHelperOpen, setExpectedOutputHelperOpen] = useState(false);
+  const [expectedOutputConverterInput, setExpectedOutputConverterInput] = useState("");
   const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([]);
   const [isCaseDialogOpen, setIsCaseDialogOpen] = useState(false);
   const [isSavingCaseStudy, setIsSavingCaseStudy] = useState(false);
@@ -647,6 +649,90 @@ const AdminDashboard = () => {
     });
   }, [userSearch, users]);
 
+  const handleGenerateExpectedOutput = useCallback(() => {
+    const raw = expectedOutputConverterInput.trim();
+    if (!raw) {
+      toast({
+        title: "No data provided",
+        description: "Paste a sample table (header row + values) before generating JSON.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const lines = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length < 2) {
+      toast({
+        title: "Need at least two rows",
+        description: "Include a header row followed by at least one row of values.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const detectDelimiter = (line: string) => {
+      if (line.includes("\t")) return "\t";
+      if (line.includes("|")) return "|";
+      if (line.includes(";")) return ";";
+      return line.includes(",") ? "," : /\s{2,}/.test(line) ? /\s+/ : ",";
+    };
+
+    const headerDelimiter = detectDelimiter(lines[0]);
+    const normalizeRow = (line: string, delimiter: string | RegExp) => {
+      if (delimiter instanceof RegExp) {
+        return line.split(delimiter).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
+      }
+      return line.split(delimiter).map((cell) => cell.trim());
+    };
+
+    const columns = normalizeRow(lines[0], headerDelimiter).filter((col) => col.length > 0);
+    if (columns.length === 0) {
+      toast({
+        title: "No columns detected",
+        description: "Ensure the first line contains column names separated by commas, tabs, or pipes.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const values: any[][] = [];
+    for (let i = 1; i < lines.length; i += 1) {
+      const row = normalizeRow(lines[i], headerDelimiter);
+      if (row.length !== columns.length) {
+        toast({
+          title: "Row mismatch",
+          description: `Row ${i + 1} has ${row.length} value(s); expected ${columns.length}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      const parsedRow = row.map((cell) => {
+        if (!cell) return "";
+        const lowered = cell.toLowerCase();
+        if (lowered === "null") return null;
+        if (lowered === "true") return true;
+        if (lowered === "false") return false;
+        if (!Number.isNaN(Number(cell)) && /^-?\d+(\.\d+)?$/.test(cell)) {
+          return Number(cell);
+        }
+        return cell;
+      });
+      values.push(parsedRow);
+    }
+
+    const json = JSON.stringify({ columns, values }, null, 2);
+    setQuestionForm((prev) => ({ ...prev, expectedOutput: json }));
+    setExpectedOutputConverterInput("");
+    toast({
+      title: "JSON generated",
+      description: "Expected output updated with the converted table.",
+    });
+  }, [expectedOutputConverterInput, toast]);
+
   // Helper function to get module name from pricing doc ID
   const getModuleNameFromDocId = (docId: string): string => {
     // Try to find the module name from modulePricing keys
@@ -667,9 +753,8 @@ const AdminDashboard = () => {
   const uniqueTitles = useMemo(() => {
     const titles = new Set<string>();
     questions.forEach((q) => {
-      if (q.title?.trim()) {
-        titles.add(q.title.trim());
-      }
+      const normalizedTitle = q.title?.trim() || DEFAULT_TITLE;
+      titles.add(normalizedTitle);
     });
     return Array.from(titles).sort();
   }, [questions]);
@@ -719,6 +804,18 @@ const AdminDashboard = () => {
     }
   }, [uniqueTitles.join(',')]); // Use join to create a stable dependency, removed moduleOrder.length to avoid infinite loop
 
+  const moduleFilterOptions = useMemo(() => {
+    if (moduleOrder.length > 0) {
+      return moduleOrder;
+    }
+    return uniqueTitles;
+  }, [moduleOrder, uniqueTitles]);
+
+  const normalizedModuleTitle = (questionForm.title || "").toLowerCase();
+  const expectsTabularOutput = ["sql", "mysql", "python", "pandas", "dataframe"].some((keyword) =>
+    normalizedModuleTitle.includes(keyword),
+  );
+
   // Get unique companies for filter
   const uniqueCompanies = useMemo(() => {
     const companies = new Set<string>();
@@ -763,9 +860,14 @@ const AdminDashboard = () => {
     if (questionCompanyFilter !== "all") {
       filtered = filtered.filter((q) => q.company === questionCompanyFilter);
     }
+
+    // Module filter
+    if (questionModuleFilter !== "all") {
+      filtered = filtered.filter((q) => (q.title?.trim() || DEFAULT_TITLE) === questionModuleFilter);
+    }
     
     return filtered;
-  }, [questionSearch, questionTierFilter, questionDifficultyFilter, questionCompanyFilter, questions]);
+  }, [questionSearch, questionTierFilter, questionDifficultyFilter, questionCompanyFilter, questionModuleFilter, questions]);
 
   // Question stats
   const questionStats = useMemo(() => {
@@ -1626,8 +1728,22 @@ const AdminDashboard = () => {
                 ))}
               </SelectContent>
             </Select>
+
+            <Select value={questionModuleFilter} onValueChange={setQuestionModuleFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter by module" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Modules</SelectItem>
+                {moduleFilterOptions.map((module) => (
+                  <SelectItem key={module} value={module}>
+                    {module}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             
-            {(questionTierFilter !== "all" || questionDifficultyFilter !== "all" || questionCompanyFilter !== "all") && (
+            {(questionTierFilter !== "all" || questionDifficultyFilter !== "all" || questionCompanyFilter !== "all" || questionModuleFilter !== "all") && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1635,6 +1751,7 @@ const AdminDashboard = () => {
                   setQuestionTierFilter("all");
                   setQuestionDifficultyFilter("all");
                   setQuestionCompanyFilter("all");
+                  setQuestionModuleFilter("all");
                 }}
                 className="gap-2"
               >
@@ -1655,6 +1772,9 @@ const AdminDashboard = () => {
               </DialogHeader>
             </div>
             <div className="space-y-4 overflow-y-auto flex-1 px-6 py-4 custom-scrollbar">
+              <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/10 p-3 text-sm text-muted-foreground">
+                Only the module title, question prompt, answer, and tier are required. Everything else is optional to help with organization and validation.
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="title">Title (Module Name)</Label>
                 <Popover open={titleSearchOpen} onOpenChange={setTitleSearchOpen}>
@@ -1773,11 +1893,11 @@ const AdminDashboard = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="expectedOutput">Expected Output (for validation)</Label>
-                  {(questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql")) && (
+                  {expectsTabularOutput && (
                     <Collapsible open={expectedOutputHelperOpen} onOpenChange={setExpectedOutputHelperOpen}>
                       <CollapsibleTrigger asChild>
                         <Button type="button" variant="ghost" size="sm" className="h-auto py-1 text-xs">
-                          {expectedOutputHelperOpen ? "Hide" : "Show"} SQL Format Helper
+                          {expectedOutputHelperOpen ? "Hide" : "Show"} Table Format Helper
                         </Button>
                       </CollapsibleTrigger>
                       <CollapsibleContent className="mt-2">
@@ -1831,9 +1951,9 @@ const AdminDashboard = () => {
                 <Textarea
                   id="expectedOutput"
                   placeholder={
-                    (questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql"))
+                    expectsTabularOutput
                       ? 'JSON format: {"columns": ["col1", "col2"], "values": [[val1, val2], [val3, val4]]}'
-                      : 'For Python/JavaScript: exact output text. For SQL: JSON format with columns and values arrays.'
+                      : 'Provide the exact expected output text shown to the user.'
                   }
                   value={questionForm.expectedOutput}
                   onChange={(e) => setQuestionForm((prev) => ({ ...prev, expectedOutput: e.target.value }))}
@@ -1841,16 +1961,36 @@ const AdminDashboard = () => {
                   className="font-mono text-xs"
                 />
                 <p className="text-xs text-muted-foreground">
-                  {((questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql"))) ? (
-                    <>
-                      <strong>SQL/MySQL:</strong> Provide JSON with <code className="bg-background/60 px-1 py-0.5 rounded">columns</code> and <code className="bg-background/60 px-1 py-0.5 rounded">values</code> arrays matching the table structure. Click "Show SQL Format Helper" above for examples.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Python/JavaScript:</strong> Provide the exact expected output text. <strong>SQL/MySQL:</strong> Provide JSON with columns and values arrays. This will be used to validate user solutions. Leave empty if validation is not needed.
-                    </>
-                  )}
+                  <strong>Tables (SQL · Python · pandas · etc.):</strong> Use JSON with <code className="bg-background/60 px-1 py-0.5 rounded">columns</code> and <code className="bg-background/60 px-1 py-0.5 rounded">values</code>. <strong>Other outputs:</strong> Provide the exact text shown to the learner. Leave empty if validation is not required.
                 </p>
+
+                <div className="rounded-lg border border-dashed border-border/60 bg-muted/30 p-3 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <Label className="text-xs font-semibold uppercase tracking-wide">Convert Table Text to JSON</Label>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleGenerateExpectedOutput}
+                      disabled={!expectedOutputConverterInput.trim()}
+                    >
+                      Generate JSON
+                    </Button>
+                  </div>
+                  <Textarea
+                    placeholder="Paste sample data (header row first). Example:
+id, name, salary
+1, John, 50000
+2, Jane, 60000"
+                    value={expectedOutputConverterInput}
+                    onChange={(e) => setExpectedOutputConverterInput(e.target.value)}
+                    rows={4}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Works for SQL, Python (pandas), or any table-like output. Supports comma, tab, pipe, or multi‑space separators. Generated JSON is saved into the Expected Output field automatically.
+                  </p>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
