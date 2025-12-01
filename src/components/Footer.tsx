@@ -125,13 +125,23 @@ const Footer = () => {
                 </Link>
               </div>
             </div>
-            <Link
-              to="/admin/login"
-              className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors"
-            >
-              <Shield className="h-4 w-4" />
-              <span>Admin Access</span>
-            </Link>
+            <div className="flex items-center gap-4">
+              <a
+                href="https://akshbahl.vercel.app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                Powered By <span className="font-semibold">Aksh Bahl</span>
+              </a>
+              <Link
+                to="/admin/login"
+                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                <Shield className="h-4 w-4" />
+                <span>Admin Access</span>
+              </Link>
+            </div>
           </div>
         </div>
       </div>
