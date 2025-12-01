@@ -39,7 +39,7 @@ export const uploadToCloudinary = async (file: File): Promise<string> => {
   }
 };
 
-// Upload PDF or any file to Cloudinary (using raw upload for non-image files)
+// Upload PDF or any file to Cloudinary (using auto upload with public access)
 export const uploadPdfToCloudinary = async (file: File): Promise<string> => {
   if (!isCloudinaryConfigured()) {
     throw new Error('Cloudinary is not configured. Please add VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET to your .env file.');
@@ -48,12 +48,13 @@ export const uploadPdfToCloudinary = async (file: File): Promise<string> => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-  formData.append('resource_type', 'raw'); // For PDFs and other non-image files
+  // Use 'auto' instead of 'raw' for better compatibility
+  formData.append('resource_type', 'auto');
 
   try {
-    // Use 'raw' endpoint for PDFs
+    // Use 'auto' endpoint which handles PDFs better
     const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`,
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`,
       {
         method: 'POST',
         body: formData,

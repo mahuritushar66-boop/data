@@ -201,36 +201,59 @@ const InterviewModule = () => {
 
   // Also fetch theory questions for non-code modules
   useEffect(() => {
-    if (!isNonCodeModule(moduleTitle)) return;
+    // Fetch theory questions for non-code modules
+    const isNonCode = isNonCodeModule(moduleTitle);
+    console.log("Module:", moduleTitle, "Is non-code module:", isNonCode);
+    
+    if (!isNonCode) return;
 
     const theoryQuery = query(collection(db, "theoryQuestions"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(
       theoryQuery,
       (snapshot) => {
+        console.log("Theory questions fetched:", snapshot.docs.length);
+        
         const theoryFiltered = snapshot.docs
           .map((docSnap) => {
             const data = docSnap.data();
+            console.log("Theory question data:", { id: docSnap.id, module: data.module, question: data.question?.substring(0, 50) });
             return {
               id: docSnap.id,
-              question: data.question,
-              answer: "", // Theory questions don't have answers in the same way
+              question: data.question || "",
+              answer: data.hint || "", // Use hint as answer
               tier: "free" as "free" | "paid",
               createdAt: data.createdAt?.toDate?.(),
-              title: data.module, // Use module as title
-              questionTitle: data.question.substring(0, 60) + (data.question.length > 60 ? "..." : ""),
-              difficulty: undefined,
-              company: undefined,
-              order: undefined,
+              title: data.module || "", // Use module as title
+              questionTitle: data.question ? (data.question.substring(0, 60) + (data.question.length > 60 ? "..." : "")) : "Untitled",
+              difficulty: data.difficulty as "easy" | "medium" | "hard" | undefined,
+              company: data.company,
+              order: data.order,
               isTheory: true,
             };
           })
-          .filter((item) => item.title?.toLowerCase().includes(moduleTitle.toLowerCase()) || 
-                           moduleTitle.toLowerCase().includes(item.title?.toLowerCase() || ""));
+          .filter((item) => {
+            // Match if module matches the current page title
+            const itemModule = (item.title || "").toLowerCase().trim();
+            const pageModule = moduleTitle.toLowerCase().trim();
+            
+            // Check various matching conditions
+            const exactMatch = itemModule === pageModule;
+            const itemIncludesPage = itemModule.includes(pageModule);
+            const pageIncludesItem = pageModule.includes(itemModule);
+            
+            const matches = exactMatch || itemIncludesPage || pageIncludesItem;
+            console.log(`Filter check: "${itemModule}" vs "${pageModule}" = ${matches}`);
+            return matches;
+          });
 
-        // Merge with existing questions
+        console.log("Theory questions after filter:", theoryFiltered.length);
+
+        // Merge with existing questions (replace theory questions, keep regular questions)
         setQuestions((prev) => {
           const nonTheory = prev.filter(q => !q.isTheory);
-          return [...nonTheory, ...theoryFiltered];
+          const merged = [...nonTheory, ...theoryFiltered];
+          console.log("Total questions after merge:", merged.length);
+          return merged;
         });
       },
       (error) => {

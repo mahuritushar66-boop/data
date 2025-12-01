@@ -1,15 +1,6 @@
-import { useState, useEffect } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Download, Loader2 } from "lucide-react";
-import "react-pdf/dist/Page/AnnotationLayer.css";
-import "react-pdf/dist/Page/TextLayer.css";
-
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+import { Download, FileText, ExternalLink, Eye, RefreshCw } from "lucide-react";
 
 interface PdfViewerProps {
   url: string;
@@ -17,143 +8,148 @@ interface PdfViewerProps {
 }
 
 const PdfViewer = ({ url, title }: PdfViewerProps) => {
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageNumber, setPageNumber] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.0);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [pdfText, setPdfText] = useState<string>("");
+  const [viewMode, setViewMode] = useState<"google" | "direct" | "none">("google");
+  const [isLoading, setIsLoading] = useState(true);
 
-  const onDocumentLoadSuccess = async ({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-    setLoading(false);
-    
-    // Try to extract text from all pages
-    try {
-      const pdf = await pdfjs.getDocument(url).promise;
-      let fullText = "";
-      
-      for (let i = 1; i <= numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items
-          .map((item: any) => item.str)
-          .join(" ");
-        fullText += pageText + "\n\n";
-      }
-      
-      setPdfText(fullText);
-    } catch (err) {
-      console.error("Error extracting PDF text:", err);
+  // Google Docs Viewer URL (bypasses CORS)
+  const googleViewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
+
+  // Handle download - open in new window
+  const handleOpenPdf = () => {
+    // For Cloudinary raw URLs, we can try to force download
+    const newWindow = window.open(url, "_blank", "noopener,noreferrer");
+    if (!newWindow) {
+      // Fallback: create a temporary link
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
-  const onDocumentLoadError = (err: Error) => {
-    setLoading(false);
-    setError("Failed to load PDF. Please try again.");
-    console.error("PDF load error:", err);
+  // Force download
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = title ? `${title}.pdf` : "document.pdf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      // Fallback to direct link
+      handleOpenPdf();
+    }
   };
 
-  const goToPrevPage = () => {
-    setPageNumber((prev) => Math.max(prev - 1, 1));
-  };
-
-  const goToNextPage = () => {
-    setPageNumber((prev) => Math.min(prev + 1, numPages));
-  };
-
-  const zoomIn = () => {
-    setScale((prev) => Math.min(prev + 0.2, 2.5));
-  };
-
-  const zoomOut = () => {
-    setScale((prev) => Math.max(prev - 0.2, 0.5));
-  };
-
-  if (error) {
+  // Check if URL is valid
+  if (!url) {
     return (
       <div className="flex flex-col items-center justify-center p-8 bg-muted/30 rounded-lg">
-        <p className="text-destructive mb-4">{error}</p>
-        <Button variant="outline" onClick={() => window.open(url, "_blank")}>
-          <Download className="mr-2 h-4 w-4" />
-          Download PDF Instead
-        </Button>
+        <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+        <p className="text-muted-foreground">No PDF available</p>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {/* PDF Controls */}
-      <div className="flex items-center justify-between flex-wrap gap-4 p-4 bg-muted/30 rounded-lg">
+      {/* PDF Header with Controls */}
+      <div className="flex items-center justify-between flex-wrap gap-3 p-4 bg-muted/30 rounded-lg">
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={goToPrevPage}
-            disabled={pageNumber <= 1}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm">
-            Page {pageNumber} of {numPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={goToNextPage}
-            disabled={pageNumber >= numPages}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+          <FileText className="h-5 w-5 text-primary" />
+          <span className="font-medium">{title || "Document"}</span>
         </div>
-        
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={zoomOut}>
-            <ZoomOut className="h-4 w-4" />
+        <div className="flex flex-wrap gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              setIsLoading(true);
+              setViewMode(viewMode === "google" ? "direct" : "google");
+            }}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            {viewMode === "google" ? "Try Direct" : "Try Google Viewer"}
           </Button>
-          <span className="text-sm w-16 text-center">{Math.round(scale * 100)}%</span>
-          <Button variant="outline" size="sm" onClick={zoomIn}>
-            <ZoomIn className="h-4 w-4" />
+          <Button variant="outline" size="sm" onClick={handleOpenPdf}>
+            <ExternalLink className="h-4 w-4 mr-2" />
+            Open
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.open(url, "_blank")}>
-            <Download className="h-4 w-4 mr-1" />
+          <Button variant="default" size="sm" onClick={handleDownload}>
+            <Download className="h-4 w-4 mr-2" />
             Download
           </Button>
         </div>
       </div>
 
-      {/* PDF Document */}
-      <div className="flex justify-center overflow-auto bg-muted/20 rounded-lg p-4 min-h-[500px]">
-        {loading && (
-          <div className="flex items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        )}
-        <Document
-          file={url}
-          onLoadSuccess={onDocumentLoadSuccess}
-          onLoadError={onDocumentLoadError}
-          loading={null}
-        >
-          <Page
-            pageNumber={pageNumber}
-            scale={scale}
-            renderTextLayer={true}
-            renderAnnotationLayer={true}
+      {/* PDF Viewer */}
+      {viewMode !== "none" ? (
+        <div className="w-full bg-muted/20 rounded-lg overflow-hidden relative">
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+              <div className="flex flex-col items-center gap-2">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <p className="text-sm text-muted-foreground">Loading PDF...</p>
+              </div>
+            </div>
+          )}
+          <iframe
+            src={viewMode === "google" ? googleViewerUrl : url}
+            className="w-full h-[600px] border-0"
+            title={title || "PDF Document"}
+            onLoad={() => setIsLoading(false)}
+            onError={() => {
+              setIsLoading(false);
+              if (viewMode === "google") {
+                setViewMode("direct");
+              } else {
+                setViewMode("none");
+              }
+            }}
           />
-        </Document>
-      </div>
-
-      {/* Extracted Text Preview */}
-      {pdfText && (
-        <div className="mt-4">
-          <h3 className="text-lg font-semibold mb-2">PDF Content Preview</h3>
-          <div className="max-h-60 overflow-y-auto p-4 bg-muted/30 rounded-lg text-sm">
-            <pre className="whitespace-pre-wrap font-sans">{pdfText.substring(0, 2000)}...</pre>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center p-12 bg-muted/30 rounded-lg space-y-4">
+          <FileText className="h-16 w-16 text-muted-foreground" />
+          <p className="text-center text-muted-foreground">
+            PDF preview not available due to security restrictions.
+          </p>
+          <p className="text-center text-xs text-muted-foreground">
+            Click the buttons below to view or download the PDF.
+          </p>
+          <div className="flex gap-3">
+            <Button onClick={handleOpenPdf}>
+              <Eye className="h-4 w-4 mr-2" />
+              View PDF
+            </Button>
+            <Button variant="outline" onClick={handleDownload}>
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
           </div>
         </div>
       )}
+
+      {/* Direct link */}
+      <div className="text-center space-y-2">
+        <a 
+          href={url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+        >
+          <ExternalLink className="h-3 w-3" />
+          Direct PDF Link (Right-click to save)
+        </a>
+      </div>
     </div>
   );
 };

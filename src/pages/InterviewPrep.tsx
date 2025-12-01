@@ -17,6 +17,7 @@ type InterviewQuestion = {
   difficulty?: "easy" | "medium" | "hard";
   company?: string;
   questionOfTheWeek?: boolean;
+  isTheory?: boolean;
 };
 
 type ModuleSummary = {
@@ -24,6 +25,7 @@ type ModuleSummary = {
   total: number;
   freeCount: number;
   premiumCount: number;
+  isTheoryModule?: boolean;
 };
 
 const DEFAULT_TITLE = "General";
@@ -33,7 +35,9 @@ const InterviewPrep = () => {
   const navigate = useNavigate();
 
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
+  const [theoryQuestions, setTheoryQuestions] = useState<InterviewQuestion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [theoryLoading, setTheoryLoading] = useState(true);
   const [moduleOrder, setModuleOrder] = useState<string[]>([]);
 
   // Scroll to top when component mounts
@@ -41,6 +45,7 @@ const InterviewPrep = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  // Fetch regular interview questions
   useEffect(() => {
     const q = query(collection(db, "interviewQuestions"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(
@@ -58,6 +63,7 @@ const InterviewPrep = () => {
               difficulty: data.difficulty,
               company: data.company,
               questionOfTheWeek: data.questionOfTheWeek ?? false,
+              isTheory: false,
             } as InterviewQuestion;
           }),
         );
@@ -65,11 +71,9 @@ const InterviewPrep = () => {
       },
       (error) => {
         console.error("Firebase error:", error);
-        console.error("Error code:", error.code);
-        console.error("Error message:", error.message);
         toast({
           title: "Unable to load question modules",
-          description: error.message || "Please check your Firebase security rules allow public read access.",
+          description: error.message || "Please check your Firebase security rules.",
           variant: "destructive",
         });
         setLoading(false);
@@ -78,6 +82,38 @@ const InterviewPrep = () => {
 
     return unsubscribe;
   }, [toast]);
+
+  // Fetch theory questions (Puzzle, AI, ML, etc.)
+  useEffect(() => {
+    const q = query(collection(db, "theoryQuestions"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setTheoryQuestions(
+          snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              title: data.module, // Theory questions use 'module' field as title
+              question: data.question,
+              tier: "free" as "free" | "paid",
+              questionTitle: data.question?.substring(0, 60) + (data.question?.length > 60 ? "..." : ""),
+              difficulty: data.difficulty as "easy" | "medium" | "hard" | undefined,
+              company: data.company,
+              isTheory: true,
+            } as InterviewQuestion;
+          }),
+        );
+        setTheoryLoading(false);
+      },
+      (error) => {
+        console.error("Theory questions error:", error);
+        setTheoryLoading(false);
+      },
+    );
+
+    return unsubscribe;
+  }, []);
 
   // Load module order
   useEffect(() => {
@@ -97,18 +133,36 @@ const InterviewPrep = () => {
     return unsubscribe;
   }, []);
 
+  // Combine regular questions and theory questions into module summaries
   const moduleSummaries = useMemo<ModuleSummary[]>(() => {
     const map = new Map<string, ModuleSummary>();
+    
+    // Add regular interview questions
     questions.forEach((q) => {
       const title = q.title?.trim() || DEFAULT_TITLE;
       if (!map.has(title)) {
-        map.set(title, { title, total: 0, freeCount: 0, premiumCount: 0 });
+        map.set(title, { title, total: 0, freeCount: 0, premiumCount: 0, isTheoryModule: false });
       }
       const summary = map.get(title)!;
       summary.total += 1;
       if (q.tier === "free") summary.freeCount += 1;
       else summary.premiumCount += 1;
     });
+    
+    // Add theory questions (Puzzle, AI, ML, etc.)
+    theoryQuestions.forEach((q) => {
+      const title = q.title?.trim() || DEFAULT_TITLE;
+      if (!map.has(title)) {
+        map.set(title, { title, total: 0, freeCount: 0, premiumCount: 0, isTheoryModule: true });
+      }
+      const summary = map.get(title)!;
+      summary.total += 1;
+      summary.freeCount += 1; // Theory questions are free
+      if (!summary.isTheoryModule) {
+        summary.isTheoryModule = true; // Mark as theory if it has theory questions
+      }
+    });
+    
     const summaries = Array.from(map.values());
     
     // Sort by module order if available, otherwise alphabetically
@@ -131,7 +185,7 @@ const InterviewPrep = () => {
     }
     
     return summaries;
-  }, [questions, moduleOrder]);
+  }, [questions, theoryQuestions, moduleOrder]);
 
   const handleOpenModule = (title: string) => {
     const slug = encodeURIComponent(title);
@@ -235,7 +289,7 @@ const InterviewPrep = () => {
       {/* Modules Section */}
       <section className="py-12">
         <div className="container mx-auto px-4 space-y-8">
-          {loading ? (
+          {(loading || theoryLoading) ? (
             <div className="flex items-center justify-center py-20">
               <div className="text-center space-y-4">
                 <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>
@@ -258,15 +312,20 @@ const InterviewPrep = () => {
             <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-2">
               {moduleSummaries.map((module, index) => {
                 // Get icon based on module title
-                const getModuleIcon = (title: string) => {
+                const getModuleIcon = (title: string, isTheory?: boolean) => {
                   const titleLower = title.toLowerCase();
                   if (titleLower.includes("sql") || titleLower.includes("database")) return Database;
                   if (titleLower.includes("python")) return Code2;
                   if (titleLower.includes("javascript") || titleLower.includes("js")) return Code2;
                   if (titleLower.includes("machine learning") || titleLower.includes("ml")) return Brain;
+                  if (titleLower.includes("ai") || titleLower.includes("artificial")) return Brain;
+                  if (titleLower.includes("puzzle") || titleLower.includes("logic")) return Brain;
+                  if (titleLower.includes("aptitude")) return Brain;
+                  if (titleLower.includes("theory")) return BookOpen;
+                  if (isTheory) return Brain;
                   return BookOpen;
                 };
-                const ModuleIcon = getModuleIcon(module.title);
+                const ModuleIcon = getModuleIcon(module.title, module.isTheoryModule);
 
                 return (
                   <GlassCard

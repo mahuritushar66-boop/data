@@ -22,6 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Check, ChevronsUpDown, ChevronsUp, ChevronsDown, Search, X } from "lucide-react";
 import {
@@ -165,7 +166,7 @@ type Service = {
   ctaLabel?: string;
   ctaUrl?: string;
 };
-type AdminSection = "questions" | "theory-questions" | "case-studies" | "projects" | "blog" | "courses" | "about" | "services" | "users" | "testimonials" | "module-order" | "question-order";
+type AdminSection = "dashboard" | "questions" | "theory-questions" | "case-studies" | "projects" | "blog" | "courses" | "about" | "services" | "users" | "testimonials" | "module-order" | "question-order";
 
 // Non-code modules that don't need compiler
 const NON_CODE_MODULES = ["Puzzle", "AI", "ML", "Theory", "Aptitude", "Logical Reasoning"];
@@ -177,6 +178,8 @@ type TheoryQuestion = {
   hint?: string;
   imageUrls?: string[];
   pdfUrl?: string;
+  company?: string;
+  difficulty?: "easy" | "medium" | "hard";
   createdAt?: Date;
 };
 
@@ -197,7 +200,7 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { setUserPaidStatus, logout } = useAuth();
-  const [activeSection, setActiveSection] = useState<AdminSection>("questions");
+  const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isMobile = useIsMobile();
 
@@ -351,6 +354,8 @@ const AdminDashboard = () => {
     module: "",
     question: "",
     hint: "",
+    company: "",
+    difficulty: "" as "" | "easy" | "medium" | "hard",
   });
   const [theoryImages, setTheoryImages] = useState<File[]>([]);
   const [theoryPdf, setTheoryPdf] = useState<File | null>(null);
@@ -429,6 +434,8 @@ const AdminDashboard = () => {
             hint: data.hint,
             imageUrls: data.imageUrls || [],
             pdfUrl: data.pdfUrl,
+            company: data.company,
+            difficulty: data.difficulty,
             createdAt: data.createdAt?.toDate?.(),
           } as TheoryQuestion;
         });
@@ -1274,24 +1281,20 @@ const AdminDashboard = () => {
       if (projectPdfFiles.length > 0) {
         toast({ title: "Uploading PDFs...", description: `${projectPdfFiles.length} file(s)` });
         
+        // Upload PDFs to Cloudinary
         for (const file of projectPdfFiles) {
           if (isCloudinaryConfigured()) {
             try {
               const url = await uploadPdfToCloudinary(file);
               pdfUrls.push(url);
-            } catch (cloudinaryError: any) {
-              console.error("Cloudinary PDF upload failed:", cloudinaryError);
-              // Fallback to Firebase
-              const fileRef = ref(storage, `project-pdfs/${Date.now()}_${file.name}`);
-              await uploadBytes(fileRef, file);
-              const url = await getDownloadURL(fileRef);
-              pdfUrls.push(url);
+            } catch (error: any) {
+              console.error("Cloudinary PDF upload failed:", error);
+              toast({ 
+                title: "PDF upload failed", 
+                description: error.message,
+                variant: "destructive" 
+              });
             }
-          } else {
-            const fileRef = ref(storage, `project-pdfs/${Date.now()}_${file.name}`);
-            await uploadBytes(fileRef, file);
-            const url = await getDownloadURL(fileRef);
-            pdfUrls.push(url);
           }
         }
         toast({ title: `${projectPdfFiles.length} PDF(s) uploaded` });
@@ -1909,6 +1912,8 @@ const AdminDashboard = () => {
         module: theory.module,
         question: theory.question,
         hint: theory.hint || "",
+        company: theory.company || "",
+        difficulty: theory.difficulty || "",
       });
     } else {
       setEditingTheory(null);
@@ -1916,6 +1921,8 @@ const AdminDashboard = () => {
         module: "",
         question: "",
         hint: "",
+        company: "",
+        difficulty: "",
       });
     }
     setTheoryImages([]);
@@ -1973,7 +1980,7 @@ const AdminDashboard = () => {
         }
       }
 
-      // Upload PDF - try Cloudinary first, then Firebase Storage
+      // Upload PDF to Cloudinary
       if (theoryPdf) {
         toast({ title: "Uploading PDF...", description: "Please wait..." });
         
@@ -1983,20 +1990,18 @@ const AdminDashboard = () => {
             toast({ title: "PDF uploaded to Cloudinary" });
           } catch (cloudinaryError: any) {
             console.error("Cloudinary PDF upload failed:", cloudinaryError);
-            toast({ title: "Cloudinary failed, trying Firebase...", variant: "destructive" });
-            // Fallback to Firebase
-            const fileRef = ref(storage, `theory-pdfs/${Date.now()}_${theoryPdf.name}`);
-            await uploadBytes(fileRef, theoryPdf);
-            pdfUrl = await getDownloadURL(fileRef);
-            toast({ title: "PDF uploaded to Firebase" });
+            toast({ 
+              title: "PDF upload failed", 
+              description: cloudinaryError.message,
+              variant: "destructive" 
+            });
           }
         } else {
-          // Use Firebase Storage directly
-          console.log("Cloudinary not configured, using Firebase Storage");
-          const fileRef = ref(storage, `theory-pdfs/${Date.now()}_${theoryPdf.name}`);
-          await uploadBytes(fileRef, theoryPdf);
-          pdfUrl = await getDownloadURL(fileRef);
-          toast({ title: "PDF uploaded to Firebase" });
+          toast({ 
+            title: "Cloudinary not configured", 
+            description: "Please configure Cloudinary to upload PDFs.",
+            variant: "destructive" 
+          });
         }
       }
 
@@ -2004,6 +2009,8 @@ const AdminDashboard = () => {
         module: theoryForm.module.trim(),
         question: theoryForm.question.trim(),
         hint: theoryForm.hint.trim() || null,
+        company: theoryForm.company.trim() || null,
+        difficulty: theoryForm.difficulty || null,
         imageUrls,
         pdfUrl: pdfUrl || null,
       };
@@ -2052,6 +2059,7 @@ const AdminDashboard = () => {
   };
 
   const navigationItems = [
+    { id: "dashboard" as AdminSection, label: "Dashboard", icon: LayoutDashboard },
     { id: "questions" as AdminSection, label: "Interview Questions", icon: FileText },
     { id: "theory-questions" as AdminSection, label: "Theory Questions", icon: Brain },
     { id: "case-studies" as AdminSection, label: "Case Studies", icon: FolderOpen },
@@ -2068,6 +2076,8 @@ const AdminDashboard = () => {
 
   const getSectionDescription = (section: AdminSection): string => {
     switch (section) {
+      case "dashboard":
+        return "Overview of all content and statistics.";
       case "questions":
         return "Create, edit, or remove questions from the public repository.";
       case "theory-questions":
@@ -2097,7 +2107,228 @@ const AdminDashboard = () => {
     }
   };
 
+  // Calculate module statistics
+  const moduleStats = useMemo(() => {
+    const modules = new Map<string, { total: number; free: number; paid: number }>();
+    questions.forEach((q) => {
+      const title = q.title?.trim() || "General";
+      if (!modules.has(title)) {
+        modules.set(title, { total: 0, free: 0, paid: 0 });
+      }
+      const stats = modules.get(title)!;
+      stats.total += 1;
+      if (q.tier === "free") stats.free += 1;
+      else stats.paid += 1;
+    });
+    return Array.from(modules.entries()).map(([name, stats]) => ({
+      name,
+      ...stats,
+    })).sort((a, b) => b.total - a.total);
+  }, [questions]);
+
   // Define render functions before renderContent
+  const renderDashboardSection = () => (
+    <div className="space-y-6">
+      {/* Main Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <GlassCard className="p-4 bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-blue-500/20">
+                <FileText className="h-4 w-4 text-blue-500" />
+              </div>
+            </div>
+            <p className="text-2xl font-bold">{questions.length}</p>
+            <p className="text-xs text-muted-foreground">Interview Questions</p>
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-4 bg-gradient-to-br from-purple-500/10 to-purple-600/5 border-purple-500/20">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-purple-500/20">
+                <Brain className="h-4 w-4 text-purple-500" />
+              </div>
+            </div>
+            <p className="text-2xl font-bold">{theoryQuestions.length}</p>
+            <p className="text-xs text-muted-foreground">Theory Questions</p>
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-4 bg-gradient-to-br from-green-500/10 to-green-600/5 border-green-500/20">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-green-500/20">
+                <Users className="h-4 w-4 text-green-500" />
+              </div>
+            </div>
+            <p className="text-2xl font-bold">{users.length}</p>
+            <p className="text-xs text-muted-foreground">Total Users</p>
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-4 bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-orange-500/20">
+                <BookOpen className="h-4 w-4 text-orange-500" />
+              </div>
+            </div>
+            <p className="text-2xl font-bold">{courses.length}</p>
+            <p className="text-xs text-muted-foreground">Courses</p>
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-4 bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-cyan-500/20">
+                <Briefcase className="h-4 w-4 text-cyan-500" />
+              </div>
+            </div>
+            <p className="text-2xl font-bold">{projects.length}</p>
+            <p className="text-xs text-muted-foreground">Projects</p>
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-4 bg-gradient-to-br from-pink-500/10 to-pink-600/5 border-pink-500/20">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-2 rounded-lg bg-pink-500/20">
+                <FolderOpen className="h-4 w-4 text-pink-500" />
+              </div>
+            </div>
+            <p className="text-2xl font-bold">{caseStudies.length}</p>
+            <p className="text-xs text-muted-foreground">Case Studies</p>
+          </div>
+        </GlassCard>
+      </div>
+
+      {/* Modules Overview */}
+      <GlassCard className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Layers className="h-5 w-5 text-primary" />
+            Modules Overview
+          </h3>
+          <Badge variant="secondary">{moduleStats.length} Modules</Badge>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Module Name</TableHead>
+                <TableHead className="text-center">Total Questions</TableHead>
+                <TableHead className="text-center">Free</TableHead>
+                <TableHead className="text-center">Premium</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {moduleStats.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    No modules found. Add questions to create modules.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                moduleStats.map((module) => (
+                  <TableRow key={module.name}>
+                    <TableCell className="font-medium">{module.name}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="secondary">{module.total}</Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className="border-green-500/50 text-green-500">
+                        {module.free}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">
+                        {module.paid}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </GlassCard>
+
+      {/* Quick Stats Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Activity */}
+        <GlassCard className="p-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Content Summary
+          </h3>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Blog Posts</span>
+              <Badge>{blogPosts.length}</Badge>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Services</span>
+              <Badge>{services.length}</Badge>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Testimonials</span>
+              <Badge>{testimonials.length}</Badge>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Premium Users</span>
+              <Badge variant="secondary">
+                {users.filter(u => u.isPaid || u.hasGlobalAccess).length}
+              </Badge>
+            </div>
+          </div>
+        </GlassCard>
+
+        {/* Question Types */}
+        <GlassCard className="p-6">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            Question Breakdown
+          </h3>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Free Questions</span>
+              <Badge variant="outline" className="border-green-500/50 text-green-500">
+                {questions.filter(q => q.tier === "free").length}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Premium Questions</span>
+              <Badge variant="outline" className="border-yellow-500/50 text-yellow-500">
+                {questions.filter(q => q.tier === "paid").length}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Easy</span>
+              <Badge variant="outline" className="border-green-500/50 text-green-500 bg-green-500/10">
+                {questions.filter(q => q.difficulty === "easy").length}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Medium</span>
+              <Badge variant="outline" className="border-yellow-500/50 text-yellow-500 bg-yellow-500/10">
+                {questions.filter(q => q.difficulty === "medium").length}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-muted/30 rounded-lg">
+              <span className="text-sm">Hard</span>
+              <Badge variant="outline" className="border-red-500/50 text-red-500 bg-red-500/10">
+                {questions.filter(q => q.difficulty === "hard").length}
+              </Badge>
+            </div>
+          </div>
+        </GlassCard>
+      </div>
+    </div>
+  );
+
   const renderQuestionsSection = () => (
     <div className="space-y-6">
       {/* Stats Cards */}
@@ -2900,6 +3131,33 @@ id, name, salary
                   placeholder="Provide a hint for the question..."
                 />
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Company (Optional)</Label>
+                  <Input
+                    value={theoryForm.company}
+                    onChange={(e) => setTheoryForm((prev) => ({ ...prev, company: e.target.value }))}
+                    placeholder="e.g., Google, Amazon"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Difficulty (Optional)</Label>
+                  <Select
+                    value={theoryForm.difficulty}
+                    onValueChange={(value) => setTheoryForm((prev) => ({ ...prev, difficulty: value as "" | "easy" | "medium" | "hard" }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select difficulty..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               
               <div className="space-y-2">
                 <Label>Images (Optional)</Label>
@@ -2978,8 +3236,25 @@ id, name, salary
             <div key={theory.id} className="border border-border rounded-lg p-4 space-y-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 space-y-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="secondary">{theory.module}</Badge>
+                    {theory.company && (
+                      <Badge variant="outline">{theory.company}</Badge>
+                    )}
+                    {theory.difficulty && (
+                      <Badge 
+                        variant="outline"
+                        className={
+                          theory.difficulty === "easy" 
+                            ? "border-green-500/50 text-green-500 bg-green-500/10" 
+                            : theory.difficulty === "medium"
+                            ? "border-yellow-500/50 text-yellow-500 bg-yellow-500/10"
+                            : "border-red-500/50 text-red-500 bg-red-500/10"
+                        }
+                      >
+                        {theory.difficulty.charAt(0).toUpperCase() + theory.difficulty.slice(1)}
+                      </Badge>
+                    )}
                     {theory.pdfUrl && <Badge variant="outline">Has PDF</Badge>}
                     {theory.imageUrls && theory.imageUrls.length > 0 && (
                       <Badge variant="outline">{theory.imageUrls.length} Image(s)</Badge>
@@ -4877,6 +5152,8 @@ id, name, salary
 
   const renderContent = () => {
     switch (activeSection) {
+      case "dashboard":
+        return renderDashboardSection();
       case "questions":
         return renderQuestionsSection();
       case "theory-questions":
@@ -4902,7 +5179,7 @@ id, name, salary
       case "question-order":
         return renderQuestionOrderSection();
       default:
-        return renderQuestionsSection();
+        return renderDashboardSection();
     }
   };
 

@@ -250,11 +250,6 @@ const TheoryQuestionDetail = () => {
           </GlassCard>
         )}
 
-        {/* No Compiler Message */}
-        <div className="text-center py-4 text-muted-foreground text-sm">
-          <p>This is a theory question. No code compiler is needed.</p>
-          <p>Think through the problem and check the hint if you need help!</p>
-        </div>
       </div>
     </div>
   );
