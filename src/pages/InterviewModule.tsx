@@ -35,6 +35,8 @@ type InterviewQuestion = {
   expectedOutput?: string;
   difficulty?: "easy" | "medium" | "hard";
   company?: string;
+  order?: number;
+  isTheory?: boolean; // For theory questions (Puzzle, AI, ML)
 };
 
 const detectLanguage = (moduleTitle: string): string => {
@@ -52,6 +54,13 @@ const detectLanguage = (moduleTitle: string): string => {
 };
 
 const DEFAULT_TITLE = DEFAULT_MODULE_TITLE;
+
+// Non-code modules that don't need compiler
+const NON_CODE_MODULES = ["Puzzle", "AI", "ML", "Theory", "Aptitude", "Logical Reasoning"];
+
+const isNonCodeModule = (title: string): boolean => {
+  return NON_CODE_MODULES.some(mod => title.toLowerCase().includes(mod.toLowerCase()));
+};
 
 const InterviewModule = () => {
   const { moduleSlug } = useParams<{ moduleSlug: string }>();
@@ -152,9 +161,26 @@ const InterviewModule = () => {
               expectedOutput: data.expectedOutput,
               difficulty: data.difficulty,
               company: data.company,
+              order: data.order,
+              isTheory: false,
             };
           })
-          .filter((item) => (item.title?.trim() || DEFAULT_TITLE) === moduleTitle);
+          .filter((item) => (item.title?.trim() || DEFAULT_TITLE) === moduleTitle)
+          // Sort by order if available, otherwise by createdAt (newest first)
+          .sort((a, b) => {
+            // If both have order, sort by order (ascending)
+            if (a.order !== undefined && b.order !== undefined) {
+              return a.order - b.order;
+            }
+            // If only one has order, prioritize the one with order
+            if (a.order !== undefined) return -1;
+            if (b.order !== undefined) return 1;
+            // Fall back to createdAt (newest first)
+            if (a.createdAt && b.createdAt) {
+              return b.createdAt.getTime() - a.createdAt.getTime();
+            }
+            return 0;
+          });
 
         setQuestions(filtered);
         setLoading(false);
@@ -172,6 +198,48 @@ const InterviewModule = () => {
 
     return unsubscribe;
   }, [moduleTitle, toast]);
+
+  // Also fetch theory questions for non-code modules
+  useEffect(() => {
+    if (!isNonCodeModule(moduleTitle)) return;
+
+    const theoryQuery = query(collection(db, "theoryQuestions"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(
+      theoryQuery,
+      (snapshot) => {
+        const theoryFiltered = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              question: data.question,
+              answer: "", // Theory questions don't have answers in the same way
+              tier: "free" as "free" | "paid",
+              createdAt: data.createdAt?.toDate?.(),
+              title: data.module, // Use module as title
+              questionTitle: data.question.substring(0, 60) + (data.question.length > 60 ? "..." : ""),
+              difficulty: undefined,
+              company: undefined,
+              order: undefined,
+              isTheory: true,
+            };
+          })
+          .filter((item) => item.title?.toLowerCase().includes(moduleTitle.toLowerCase()) || 
+                           moduleTitle.toLowerCase().includes(item.title?.toLowerCase() || ""));
+
+        // Merge with existing questions
+        setQuestions((prev) => {
+          const nonTheory = prev.filter(q => !q.isTheory);
+          return [...nonTheory, ...theoryFiltered];
+        });
+      },
+      (error) => {
+        console.error("Theory questions error:", error);
+      }
+    );
+
+    return unsubscribe;
+  }, [moduleTitle]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -254,8 +322,13 @@ const InterviewModule = () => {
       navigate(`/payment?module=${encodeURIComponent(moduleTitle)}`);
       return;
     }
-    // Navigate to question if free or user has access
-    navigate(`/interview-prep/question/${question.id}`);
+    
+    // Navigate to appropriate page based on question type
+    if (question.isTheory) {
+      navigate(`/theory-question/${question.id}`);
+    } else {
+      navigate(`/interview-prep/question/${question.id}`);
+    }
   };
 
   const handleCheckout = async (mode: "module" | "global") => {

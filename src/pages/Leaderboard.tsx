@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trophy, Medal, Award, Linkedin, ArrowLeft, Crown } from "lucide-react";
+import { Trophy, Medal, Award, Linkedin, ArrowLeft, Crown, User } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 type LeaderboardUser = {
   id: string;
@@ -20,9 +21,13 @@ type LeaderboardUser = {
 const Leaderboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { currentUser, profile } = useAuth();
   const [topUsers, setTopUsers] = useState<LeaderboardUser[]>([]);
+  const [allUsers, setAllUsers] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserRank, setCurrentUserRank] = useState<number | null>(null);
 
+  // Fetch top 3 users
   useEffect(() => {
     const q = query(
       collection(db, "users"),
@@ -63,6 +68,53 @@ const Leaderboard = () => {
 
     return unsubscribe;
   }, [toast]);
+
+  // Fetch all users to calculate current user's rank
+  useEffect(() => {
+    if (!currentUser) {
+      setCurrentUserRank(null);
+      return;
+    }
+
+    const q = query(
+      collection(db, "users"),
+      orderBy("xp", "desc")
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const users = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              displayName: data.displayName || "Anonymous",
+              email: data.email,
+              xp: data.xp || 0,
+              linkedinUrl: data.linkedinUrl,
+              isPaid: data.isPaid || false,
+            } as LeaderboardUser;
+          })
+          .filter((user) => user.xp > 0);
+
+        setAllUsers(users);
+
+        // Find current user's rank
+        const userIndex = users.findIndex((u) => u.id === currentUser.uid);
+        if (userIndex !== -1) {
+          setCurrentUserRank(userIndex + 1);
+        } else {
+          setCurrentUserRank(null);
+        }
+      },
+      (error) => {
+        console.error("Error fetching all users:", error);
+      }
+    );
+
+    return unsubscribe;
+  }, [currentUser]);
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
@@ -200,6 +252,80 @@ const Leaderboard = () => {
                   </GlassCard>
                 );
               })}
+            </div>
+          )}
+
+          {/* Current User's Rank (if not in top 3) */}
+          {currentUser && currentUserRank && currentUserRank > 3 && (
+            <div className="mt-8 space-y-3">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-sm font-medium">Your Ranking</span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <GlassCard className="p-6 border-2 border-primary/30 bg-primary/5">
+                <div className="flex items-center gap-6">
+                  {/* User Icon */}
+                  <div className="flex-shrink-0">
+                    <User className="h-8 w-8 text-primary" />
+                  </div>
+
+                  {/* Rank Badge */}
+                  <div className="flex-shrink-0">
+                    <Badge
+                      className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground text-lg font-bold px-4 py-2"
+                    >
+                      #{currentUserRank}
+                    </Badge>
+                  </div>
+
+                  {/* User Info */}
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h3 className="text-xl font-bold">
+                        {profile?.displayName || "You"}
+                      </h3>
+                      {profile?.isPaid && (
+                        <Badge variant="default" className="gap-1.5">
+                          <Crown className="h-3 w-3" />
+                          Premium
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Keep solving questions to climb the ranks!
+                    </p>
+                  </div>
+
+                  {/* XP Score */}
+                  <div className="flex-shrink-0 text-right">
+                    <div className="text-3xl font-bold text-primary">
+                      {profile?.xp || 0}
+                    </div>
+                    <div className="text-sm text-muted-foreground uppercase tracking-wide">
+                      XP
+                    </div>
+                  </div>
+                </div>
+              </GlassCard>
+            </div>
+          )}
+
+          {/* Message for logged in users with no XP */}
+          {currentUser && profile && (profile.xp === undefined || profile.xp === 0) && (
+            <div className="mt-8">
+              <GlassCard className="p-6 text-center border-dashed">
+                <User className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">Start Your Journey!</h3>
+                <p className="text-muted-foreground text-sm">
+                  Complete questions to earn XP and appear on the leaderboard.
+                  <br />
+                  <span className="text-primary font-medium">Easy: 10 XP • Medium: 20 XP • Hard: 25 XP</span>
+                </p>
+                <Button className="mt-4" onClick={() => navigate("/interview-prep")}>
+                  Start Practicing
+                </Button>
+              </GlassCard>
             </div>
           )}
 

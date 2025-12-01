@@ -23,7 +23,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Check, ChevronsUpDown, Search, X } from "lucide-react";
+import { Check, ChevronsUpDown, ChevronsUp, ChevronsDown, Search, X } from "lucide-react";
 import {
   addDoc,
   collection,
@@ -40,6 +40,8 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
+import { uploadToCloudinary, uploadPdfToCloudinary, isCloudinaryConfigured } from "@/lib/cloudinary";
+import { uploadToSupabase, isSupabaseConfigured } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -68,6 +70,7 @@ type InterviewQuestion = {
   questionOfTheWeek?: boolean; // Mark as Question of the Week
   hint?: string;
   sqlTableNames?: string; // Comma-separated table names for SQL questions (e.g., "customers,orders,products")
+  order?: number; // Display order within module
 };
 
 type ManagedUser = {
@@ -98,12 +101,12 @@ type ProjectResource = {
   id: string;
   title: string;
   description: string;
-  category: string;
-  techStack: string[];
-  ctaLabel?: string;
-  ctaUrl?: string;
-  badge?: string;
-  coverEmoji?: string;
+  imageUrls?: string[]; // Multiple images
+  pdfUrls?: string[]; // Multiple PDFs
+  driveLinks?: string[]; // Multiple drive links
+  // Legacy single fields (for backward compatibility)
+  imageUrl?: string;
+  driveLink?: string;
 };
 
 type BlogPost = {
@@ -115,6 +118,41 @@ type BlogPost = {
   date?: string;
   featured?: boolean;
   url?: string;
+  imageUrl?: string;
+  order?: number;
+};
+
+type Course = {
+  id: string;
+  title: string;
+  description: string;
+  highlights: string[];
+  platform: string;
+  platformLabel: string;
+  courseUrl: string;
+  imageUrl?: string;
+  price?: string;
+  featured?: boolean;
+  order?: number;
+};
+
+type AboutContent = {
+  name: string;
+  title: string;
+  avatarUrl?: string;
+  story: string;
+  skills: string[];
+  timeline: {
+    year: string;
+    title: string;
+    company: string;
+    desc: string;
+  }[];
+  achievements: {
+    icon: string;
+    value: string;
+    label: string;
+  }[];
 };
 
 type Service = {
@@ -127,7 +165,20 @@ type Service = {
   ctaLabel?: string;
   ctaUrl?: string;
 };
-type AdminSection = "questions" | "case-studies" | "projects" | "blog" | "services" | "users" | "testimonials" | "module-order";
+type AdminSection = "questions" | "theory-questions" | "case-studies" | "projects" | "blog" | "courses" | "about" | "services" | "users" | "testimonials" | "module-order" | "question-order";
+
+// Non-code modules that don't need compiler
+const NON_CODE_MODULES = ["Puzzle", "AI", "ML", "Theory", "Aptitude", "Logical Reasoning"];
+
+type TheoryQuestion = {
+  id: string;
+  module: string; // Puzzle, AI, ML, etc.
+  question: string;
+  hint?: string;
+  imageUrls?: string[];
+  pdfUrl?: string;
+  createdAt?: Date;
+};
 
 type Testimonial = {
   id: string;
@@ -176,6 +227,9 @@ const AdminDashboard = () => {
   const [savingGlobalPrice, setSavingGlobalPrice] = useState(false);
   const [moduleOrder, setModuleOrder] = useState<string[]>([]);
   const [savingModuleOrder, setSavingModuleOrder] = useState(false);
+  const [selectedModuleForQuestionOrder, setSelectedModuleForQuestionOrder] = useState<string>("");
+  const [questionOrderMap, setQuestionOrderMap] = useState<Record<string, string[]>>({}); // moduleTitle -> questionId[]
+  const [savingQuestionOrder, setSavingQuestionOrder] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [questionSearch, setQuestionSearch] = useState("");
   const [questionTierFilter, setQuestionTierFilter] = useState<"all" | "free" | "paid">("all");
@@ -208,14 +262,12 @@ const AdminDashboard = () => {
   const [projectForm, setProjectForm] = useState({
     title: "",
     description: "",
-    category: "",
-    techStack: "",
-    ctaLabel: "",
-    ctaUrl: "",
-    badge: "",
-    coverEmoji: "",
+    imageUrls: [] as string[],
+    pdfUrls: [] as string[],
+    driveLinks: [""] as string[], // Start with one empty field
   });
-  const [projectFile, setProjectFile] = useState<File | null>(null);
+  const [projectImageFiles, setProjectImageFiles] = useState<File[]>([]);
+  const [projectPdfFiles, setProjectPdfFiles] = useState<File[]>([]);
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
   const [isBlogDialogOpen, setIsBlogDialogOpen] = useState(false);
   const [isSavingBlog, setIsSavingBlog] = useState(false);
@@ -228,7 +280,41 @@ const AdminDashboard = () => {
     date: "",
     featured: false,
     url: "",
+    imageUrl: "",
   });
+  const [blogImageFile, setBlogImageFile] = useState<File | null>(null);
+
+  // Courses state
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [isCourseDialogOpen, setIsCourseDialogOpen] = useState(false);
+  const [isSavingCourse, setIsSavingCourse] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [courseForm, setCourseForm] = useState({
+    title: "",
+    description: "",
+    highlights: "",
+    platform: "",
+    platformLabel: "",
+    courseUrl: "",
+    imageUrl: "",
+    price: "",
+    featured: false,
+  });
+  const [courseImageFile, setCourseImageFile] = useState<File | null>(null);
+
+  // About page state
+  const [aboutContent, setAboutContent] = useState<AboutContent | null>(null);
+  const [isSavingAbout, setIsSavingAbout] = useState(false);
+  const [aboutForm, setAboutForm] = useState({
+    name: "",
+    title: "",
+    avatarUrl: "",
+    story: "",
+    skills: "",
+    timeline: [] as { year: string; title: string; company: string; desc: string }[],
+    achievements: [] as { icon: string; value: string; label: string }[],
+  });
+  const [aboutAvatarFile, setAboutAvatarFile] = useState<File | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [isServiceDialogOpen, setIsServiceDialogOpen] = useState(false);
   const [isSavingService, setIsSavingService] = useState(false);
@@ -256,6 +342,19 @@ const AdminDashboard = () => {
     linkedinUrl: "",
   });
 
+  // Theory Questions (Puzzle, AI, ML modules)
+  const [theoryQuestions, setTheoryQuestions] = useState<TheoryQuestion[]>([]);
+  const [isTheoryDialogOpen, setIsTheoryDialogOpen] = useState(false);
+  const [isSavingTheory, setIsSavingTheory] = useState(false);
+  const [editingTheory, setEditingTheory] = useState<TheoryQuestion | null>(null);
+  const [theoryForm, setTheoryForm] = useState({
+    module: "",
+    question: "",
+    hint: "",
+  });
+  const [theoryImages, setTheoryImages] = useState<File[]>([]);
+  const [theoryPdf, setTheoryPdf] = useState<File | null>(null);
+
   const handleLogout = async () => {
     await logout();
     navigate("/admin/login", { replace: true });
@@ -280,6 +379,7 @@ const AdminDashboard = () => {
           difficulty: data.difficulty,
           company: data.company,
           hint: data.hint,
+          order: data.order,
         } as InterviewQuestion;
       });
       setQuestions(mapped);
@@ -309,6 +409,33 @@ const AdminDashboard = () => {
       },
       (error) => {
         console.error("Testimonials error:", error);
+      }
+    );
+    return unsubscribe;
+  }, []);
+
+  // Fetch theory questions
+  useEffect(() => {
+    const theoryQuery = query(collection(db, "theoryQuestions"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(
+      theoryQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            module: data.module,
+            question: data.question,
+            hint: data.hint,
+            imageUrls: data.imageUrls || [],
+            pdfUrl: data.pdfUrl,
+            createdAt: data.createdAt?.toDate?.(),
+          } as TheoryQuestion;
+        });
+        setTheoryQuestions(items);
+      },
+      (error) => {
+        console.error("Theory questions error:", error);
         toast({
           title: "Unable to load testimonials",
           description: error.message || "Please try again later.",
@@ -461,12 +588,8 @@ const AdminDashboard = () => {
             id: docSnap.id,
             title: data.title || "Untitled project",
             description: data.description || "",
-            category: data.category || "Project",
-            techStack: Array.isArray(data.techStack) ? data.techStack : [],
-            ctaLabel: data.ctaLabel,
-            ctaUrl: data.ctaUrl,
-            badge: data.badge,
-            coverEmoji: data.coverEmoji,
+            imageUrl: data.imageUrl,
+            driveLink: data.driveLink || data.ctaUrl || "", // Fallback to ctaUrl for old data
           } as ProjectResource;
         }),
       );
@@ -475,23 +598,80 @@ const AdminDashboard = () => {
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, "blogPosts"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "blogPosts"), orderBy("order", "asc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setBlogPosts(
-        snapshot.docs.map((docSnap) => {
-          const data = docSnap.data();
-          return {
-            id: docSnap.id,
-            title: data.title || "Untitled post",
-            excerpt: data.excerpt || "",
-            category: data.category || "General",
-            readTime: data.readTime,
-            date: data.date,
-            featured: Boolean(data.featured),
-            url: data.url,
-          } as BlogPost;
-        }),
-      );
+      const posts = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          title: data.title || "Untitled post",
+          excerpt: data.excerpt || "",
+          category: data.category || "General",
+          readTime: data.readTime,
+          date: data.date,
+          featured: Boolean(data.featured),
+          url: data.url,
+          imageUrl: data.imageUrl,
+          order: data.order ?? 999,
+        } as BlogPost;
+      });
+      // Sort by order, then by createdAt
+      posts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      setBlogPosts(posts);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Fetch courses
+  useEffect(() => {
+    const q = query(collection(db, "courses"), orderBy("order", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          title: data.title,
+          description: data.description,
+          highlights: data.highlights || [],
+          platform: data.platform,
+          platformLabel: data.platformLabel,
+          courseUrl: data.courseUrl,
+          imageUrl: data.imageUrl,
+          price: data.price,
+          featured: Boolean(data.featured),
+          order: data.order ?? 999,
+        } as Course;
+      });
+      items.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+      setCourses(items);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Fetch about content
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, "siteContent", "about"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setAboutContent({
+          name: data.name || "",
+          title: data.title || "",
+          avatarUrl: data.avatarUrl || "",
+          story: data.story || "",
+          skills: data.skills || [],
+          timeline: data.timeline || [],
+          achievements: data.achievements || [],
+        });
+        setAboutForm({
+          name: data.name || "",
+          title: data.title || "",
+          avatarUrl: data.avatarUrl || "",
+          story: data.story || "",
+          skills: (data.skills || []).join(", "),
+          timeline: data.timeline || [],
+          achievements: data.achievements || [],
+        });
+      }
     });
     return unsubscribe;
   }, []);
@@ -942,30 +1122,31 @@ const AdminDashboard = () => {
   const openProjectDialog = (project?: ProjectResource) => {
     if (project) {
       setEditingProject(project);
+      // Handle both legacy single fields and new array fields
+      const imageUrls = project.imageUrls || (project.imageUrl ? [project.imageUrl] : []);
+      const pdfUrls = project.pdfUrls || [];
+      const driveLinks = project.driveLinks || (project.driveLink ? [project.driveLink] : [""]);
+      
       setProjectForm({
         title: project.title,
         description: project.description,
-        category: project.category,
-        techStack: project.techStack.join(", "),
-        ctaLabel: project.ctaLabel || "",
-        ctaUrl: project.ctaUrl || "",
-        badge: project.badge || "",
-        coverEmoji: project.coverEmoji || "",
+        imageUrls,
+        pdfUrls,
+        driveLinks: driveLinks.length > 0 ? driveLinks : [""],
       });
-      setProjectFile(null);
+      setProjectImageFiles([]);
+      setProjectPdfFiles([]);
     } else {
       setEditingProject(null);
       setProjectForm({
         title: "",
         description: "",
-        category: "",
-        techStack: "",
-        ctaLabel: "",
-        ctaUrl: "",
-        badge: "",
-        coverEmoji: "",
+        imageUrls: [],
+        pdfUrls: [],
+        driveLinks: [""],
       });
-      setProjectFile(null);
+      setProjectImageFiles([]);
+      setProjectPdfFiles([]);
     }
     setIsProjectDialogOpen(true);
   };
@@ -1037,59 +1218,105 @@ const AdminDashboard = () => {
   };
 
   const handleSaveProject = async () => {
-    if (!projectForm.title.trim() || !projectForm.description.trim() || !projectForm.category.trim()) {
+    if (!projectForm.title.trim() || !projectForm.description.trim()) {
       toast({
         title: "Missing information",
-        description: "Title, description, and category are required.",
+        description: "Title and description are required.",
         variant: "destructive",
       });
       return;
     }
 
-    const techStack = projectForm.techStack
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-    let ctaUrl = projectForm.ctaUrl.trim();
-    let ctaLabel = projectForm.ctaLabel.trim() || (projectFile ? "Download" : "");
+    // Check if at least one drive link is provided
+    const validDriveLinks = projectForm.driveLinks.filter(link => link.trim());
+    if (validDriveLinks.length === 0) {
+      toast({
+        title: "Missing Google Drive link",
+        description: "Please provide at least one Google Drive link.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsSavingProject(true);
     try {
-      if (projectFile) {
-        const fileRef = ref(storage, `projects/${Date.now()}_${projectFile.name}`);
-        await uploadBytes(fileRef, projectFile);
-        ctaUrl = await getDownloadURL(fileRef);
-        if (!ctaLabel) {
-          ctaLabel = "Download";
+      let imageUrls = [...projectForm.imageUrls];
+      let pdfUrls = [...projectForm.pdfUrls];
+
+      // Upload new images to Cloudinary
+      if (projectImageFiles.length > 0) {
+        toast({ title: "Uploading images...", description: `${projectImageFiles.length} file(s)` });
+        
+        for (const file of projectImageFiles) {
+          if (isCloudinaryConfigured()) {
+            try {
+              const url = await uploadToCloudinary(file);
+              imageUrls.push(url);
+            } catch (cloudinaryError: any) {
+              console.error("Cloudinary upload failed:", cloudinaryError);
+              // Fallback to Firebase
+              const fileRef = ref(storage, `project-images/${Date.now()}_${file.name}`);
+              await uploadBytes(fileRef, file);
+              const url = await getDownloadURL(fileRef);
+              imageUrls.push(url);
+            }
+          } else {
+            const fileRef = ref(storage, `project-images/${Date.now()}_${file.name}`);
+            await uploadBytes(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+            imageUrls.push(url);
+          }
         }
+        toast({ title: `${projectImageFiles.length} image(s) uploaded` });
       }
 
-      if (!ctaUrl) {
-        toast({
-          title: "Missing download link",
-          description: "Provide a file or a download URL.",
-          variant: "destructive",
-        });
-        setIsSavingProject(false);
-        return;
+      // Upload new PDFs to Cloudinary
+      if (projectPdfFiles.length > 0) {
+        toast({ title: "Uploading PDFs...", description: `${projectPdfFiles.length} file(s)` });
+        
+        for (const file of projectPdfFiles) {
+          if (isCloudinaryConfigured()) {
+            try {
+              const url = await uploadPdfToCloudinary(file);
+              pdfUrls.push(url);
+            } catch (cloudinaryError: any) {
+              console.error("Cloudinary PDF upload failed:", cloudinaryError);
+              // Fallback to Firebase
+              const fileRef = ref(storage, `project-pdfs/${Date.now()}_${file.name}`);
+              await uploadBytes(fileRef, file);
+              const url = await getDownloadURL(fileRef);
+              pdfUrls.push(url);
+            }
+          } else {
+            const fileRef = ref(storage, `project-pdfs/${Date.now()}_${file.name}`);
+            await uploadBytes(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+            pdfUrls.push(url);
+          }
+        }
+        toast({ title: `${projectPdfFiles.length} PDF(s) uploaded` });
       }
+
+      const projectData = {
+        title: projectForm.title.trim(),
+        description: projectForm.description.trim(),
+        imageUrls,
+        pdfUrls,
+        driveLinks: validDriveLinks,
+        // Keep legacy single fields for backward compatibility
+        imageUrl: imageUrls[0] || "",
+        driveLink: validDriveLinks[0] || "",
+      };
 
       if (editingProject) {
         await updateDoc(doc(db, "projects", editingProject.id), {
-          ...projectForm,
-          techStack,
-          ctaUrl,
-          ctaLabel,
+          ...projectData,
           updatedAt: serverTimestamp(),
         });
         toast({ title: "Project updated" });
       } else {
         await addDoc(collection(db, "projects"), {
-          ...projectForm,
-          techStack,
-          ctaUrl,
-          ctaLabel,
+          ...projectData,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -1097,7 +1324,8 @@ const AdminDashboard = () => {
       }
       setIsProjectDialogOpen(false);
       setEditingProject(null);
-      setProjectFile(null);
+      setProjectImageFiles([]);
+      setProjectPdfFiles([]);
     } catch (error: any) {
       toast({
         title: "Failed to save project",
@@ -1134,6 +1362,7 @@ const AdminDashboard = () => {
         date: blog.date || "",
         featured: blog.featured || false,
         url: blog.url || "",
+        imageUrl: blog.imageUrl || "",
       });
     } else {
       setEditingBlog(null);
@@ -1145,8 +1374,10 @@ const AdminDashboard = () => {
         date: "",
         featured: false,
         url: "",
+        imageUrl: "",
       });
     }
+    setBlogImageFile(null);
     setIsBlogDialogOpen(true);
   };
 
@@ -1162,27 +1393,40 @@ const AdminDashboard = () => {
 
     setIsSavingBlog(true);
     try {
+      let imageUrl = blogForm.imageUrl.trim();
+
+      // Upload image if provided
+      if (blogImageFile) {
+        if (isCloudinaryConfigured()) {
+          imageUrl = await uploadToCloudinary(blogImageFile);
+        } else {
+          const fileRef = ref(storage, `blog-images/${Date.now()}_${blogImageFile.name}`);
+          await uploadBytes(fileRef, blogImageFile);
+          imageUrl = await getDownloadURL(fileRef);
+        }
+      }
+
+      const blogData = {
+        title: blogForm.title.trim(),
+        excerpt: blogForm.excerpt.trim(),
+        category: blogForm.category.trim() || "General",
+        readTime: blogForm.readTime.trim() || undefined,
+        date: blogForm.date.trim() || undefined,
+        featured: blogForm.featured,
+        url: blogForm.url.trim(),
+        imageUrl: imageUrl || undefined,
+      };
+
       if (editingBlog) {
         await updateDoc(doc(db, "blogPosts", editingBlog.id), {
-          title: blogForm.title.trim(),
-          excerpt: blogForm.excerpt.trim(),
-          category: blogForm.category.trim() || "General",
-          readTime: blogForm.readTime.trim() || undefined,
-          date: blogForm.date.trim() || undefined,
-          featured: blogForm.featured,
-          url: blogForm.url.trim(),
+          ...blogData,
           updatedAt: serverTimestamp(),
         });
         toast({ title: "Blog post updated" });
       } else {
         await addDoc(collection(db, "blogPosts"), {
-          title: blogForm.title.trim(),
-          excerpt: blogForm.excerpt.trim(),
-          category: blogForm.category.trim() || "General",
-          readTime: blogForm.readTime.trim() || undefined,
-          date: blogForm.date.trim() || undefined,
-          featured: blogForm.featured,
-          url: blogForm.url.trim(),
+          ...blogData,
+          order: blogPosts.length,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -1190,6 +1434,7 @@ const AdminDashboard = () => {
       }
       setIsBlogDialogOpen(false);
       setEditingBlog(null);
+      setBlogImageFile(null);
     } catch (error: any) {
       toast({
         title: "Failed to save blog post",
@@ -1199,6 +1444,255 @@ const AdminDashboard = () => {
     } finally {
       setIsSavingBlog(false);
     }
+  };
+
+  // Blog reordering
+  const handleMoveBlogUp = (index: number) => {
+    if (index === 0) return;
+    const newPosts = [...blogPosts];
+    [newPosts[index - 1], newPosts[index]] = [newPosts[index], newPosts[index - 1]];
+    setBlogPosts(newPosts);
+  };
+
+  const handleMoveBlogDown = (index: number) => {
+    if (index === blogPosts.length - 1) return;
+    const newPosts = [...blogPosts];
+    [newPosts[index], newPosts[index + 1]] = [newPosts[index + 1], newPosts[index]];
+    setBlogPosts(newPosts);
+  };
+
+  const handleSaveBlogOrder = async () => {
+    try {
+      const updates = blogPosts.map((post, index) =>
+        updateDoc(doc(db, "blogPosts", post.id), { order: index })
+      );
+      await Promise.all(updates);
+      toast({ title: "Blog order saved" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to save order",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Course handlers
+  const openCourseDialog = (course?: Course) => {
+    if (course) {
+      setEditingCourse(course);
+      setCourseForm({
+        title: course.title,
+        description: course.description,
+        highlights: course.highlights.join("\n"),
+        platform: course.platform,
+        platformLabel: course.platformLabel,
+        courseUrl: course.courseUrl,
+        imageUrl: course.imageUrl || "",
+        price: course.price || "",
+        featured: course.featured || false,
+      });
+    } else {
+      setEditingCourse(null);
+      setCourseForm({
+        title: "",
+        description: "",
+        highlights: "",
+        platform: "",
+        platformLabel: "",
+        courseUrl: "",
+        imageUrl: "",
+        price: "",
+        featured: false,
+      });
+    }
+    setCourseImageFile(null);
+    setIsCourseDialogOpen(true);
+  };
+
+  const handleSaveCourse = async () => {
+    if (!courseForm.title.trim() || !courseForm.description.trim() || !courseForm.courseUrl.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Please provide title, description, and course URL.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingCourse(true);
+    try {
+      let imageUrl = courseForm.imageUrl.trim();
+
+      if (courseImageFile) {
+        if (isCloudinaryConfigured()) {
+          imageUrl = await uploadToCloudinary(courseImageFile);
+        } else {
+          const fileRef = ref(storage, `course-images/${Date.now()}_${courseImageFile.name}`);
+          await uploadBytes(fileRef, courseImageFile);
+          imageUrl = await getDownloadURL(fileRef);
+        }
+      }
+
+      const highlights = courseForm.highlights
+        .split("\n")
+        .map((h) => h.trim())
+        .filter(Boolean);
+
+      const courseData = {
+        title: courseForm.title.trim(),
+        description: courseForm.description.trim(),
+        highlights,
+        platform: courseForm.platform.trim(),
+        platformLabel: courseForm.platformLabel.trim() || courseForm.platform.trim(),
+        courseUrl: courseForm.courseUrl.trim(),
+        imageUrl: imageUrl || undefined,
+        price: courseForm.price.trim() || undefined,
+        featured: courseForm.featured,
+      };
+
+      if (editingCourse) {
+        await updateDoc(doc(db, "courses", editingCourse.id), {
+          ...courseData,
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: "Course updated" });
+      } else {
+        await addDoc(collection(db, "courses"), {
+          ...courseData,
+          order: courses.length,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: "Course added" });
+      }
+      setIsCourseDialogOpen(false);
+      setEditingCourse(null);
+      setCourseImageFile(null);
+    } catch (error: any) {
+      toast({
+        title: "Failed to save course",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingCourse(false);
+    }
+  };
+
+  const handleDeleteCourse = async (id: string) => {
+    if (!window.confirm("Delete this course?")) return;
+    try {
+      await deleteDoc(doc(db, "courses", id));
+      toast({ title: "Course deleted" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete course",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // About page handlers
+  const handleSaveAbout = async () => {
+    if (!aboutForm.name.trim() || !aboutForm.story.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Please provide name and story.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingAbout(true);
+    try {
+      let avatarUrl = aboutForm.avatarUrl.trim();
+
+      if (aboutAvatarFile) {
+        if (isCloudinaryConfigured()) {
+          avatarUrl = await uploadToCloudinary(aboutAvatarFile);
+        } else {
+          const fileRef = ref(storage, `about-avatar/${Date.now()}_${aboutAvatarFile.name}`);
+          await uploadBytes(fileRef, aboutAvatarFile);
+          avatarUrl = await getDownloadURL(fileRef);
+        }
+      }
+
+      const skills = aboutForm.skills
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const aboutData = {
+        name: aboutForm.name.trim(),
+        title: aboutForm.title.trim(),
+        avatarUrl: avatarUrl || undefined,
+        story: aboutForm.story.trim(),
+        skills,
+        timeline: aboutForm.timeline,
+        achievements: aboutForm.achievements,
+        updatedAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, "siteContent", "about"), aboutData, { merge: true });
+      toast({ title: "About page updated" });
+      setAboutAvatarFile(null);
+    } catch (error: any) {
+      toast({
+        title: "Failed to save about page",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingAbout(false);
+    }
+  };
+
+  const addTimelineItem = () => {
+    setAboutForm((prev) => ({
+      ...prev,
+      timeline: [...prev.timeline, { year: "", title: "", company: "", desc: "" }],
+    }));
+  };
+
+  const removeTimelineItem = (index: number) => {
+    setAboutForm((prev) => ({
+      ...prev,
+      timeline: prev.timeline.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateTimelineItem = (index: number, field: string, value: string) => {
+    setAboutForm((prev) => ({
+      ...prev,
+      timeline: prev.timeline.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item
+      ),
+    }));
+  };
+
+  const addAchievementItem = () => {
+    setAboutForm((prev) => ({
+      ...prev,
+      achievements: [...prev.achievements, { icon: "Award", value: "", label: "" }],
+    }));
+  };
+
+  const removeAchievementItem = (index: number) => {
+    setAboutForm((prev) => ({
+      ...prev,
+      achievements: prev.achievements.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateAchievementItem = (index: number, field: string, value: string) => {
+    setAboutForm((prev) => ({
+      ...prev,
+      achievements: prev.achievements.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item
+      ),
+    }));
   };
 
   const handleDeleteBlog = async (id: string) => {
@@ -1407,27 +1901,187 @@ const AdminDashboard = () => {
     }
   };
 
+  // Theory Questions functions
+  const openTheoryDialog = (theory?: TheoryQuestion) => {
+    if (theory) {
+      setEditingTheory(theory);
+      setTheoryForm({
+        module: theory.module,
+        question: theory.question,
+        hint: theory.hint || "",
+      });
+    } else {
+      setEditingTheory(null);
+      setTheoryForm({
+        module: "",
+        question: "",
+        hint: "",
+      });
+    }
+    setTheoryImages([]);
+    setTheoryPdf(null);
+    setIsTheoryDialogOpen(true);
+  };
+
+  const handleSaveTheory = async () => {
+    if (!theoryForm.module.trim() || !theoryForm.question.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Module and question are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingTheory(true);
+    try {
+      let imageUrls: string[] = editingTheory?.imageUrls || [];
+      let pdfUrl = editingTheory?.pdfUrl || "";
+
+      // Upload images - try Cloudinary first, then Firebase Storage
+      if (theoryImages.length > 0) {
+        toast({ title: "Uploading images...", description: "Please wait..." });
+        
+        if (isCloudinaryConfigured()) {
+          try {
+            const uploadPromises = theoryImages.map((img) => uploadToCloudinary(img));
+            const uploadedUrls = await Promise.all(uploadPromises);
+            imageUrls = [...imageUrls, ...uploadedUrls];
+            toast({ title: `${theoryImages.length} image(s) uploaded to Cloudinary` });
+          } catch (cloudinaryError: any) {
+            console.error("Cloudinary upload failed:", cloudinaryError);
+            toast({ title: "Cloudinary failed, trying Firebase...", variant: "destructive" });
+            // Fallback to Firebase
+            for (const img of theoryImages) {
+              const fileRef = ref(storage, `theory-images/${Date.now()}_${img.name}`);
+              await uploadBytes(fileRef, img);
+              const url = await getDownloadURL(fileRef);
+              imageUrls.push(url);
+            }
+            toast({ title: `${theoryImages.length} image(s) uploaded to Firebase` });
+          }
+        } else {
+          // Use Firebase Storage directly
+          console.log("Cloudinary not configured, using Firebase Storage");
+          for (const img of theoryImages) {
+            const fileRef = ref(storage, `theory-images/${Date.now()}_${img.name}`);
+            await uploadBytes(fileRef, img);
+            const url = await getDownloadURL(fileRef);
+            imageUrls.push(url);
+          }
+          toast({ title: `${theoryImages.length} image(s) uploaded to Firebase` });
+        }
+      }
+
+      // Upload PDF - try Cloudinary first, then Firebase Storage
+      if (theoryPdf) {
+        toast({ title: "Uploading PDF...", description: "Please wait..." });
+        
+        if (isCloudinaryConfigured()) {
+          try {
+            pdfUrl = await uploadPdfToCloudinary(theoryPdf);
+            toast({ title: "PDF uploaded to Cloudinary" });
+          } catch (cloudinaryError: any) {
+            console.error("Cloudinary PDF upload failed:", cloudinaryError);
+            toast({ title: "Cloudinary failed, trying Firebase...", variant: "destructive" });
+            // Fallback to Firebase
+            const fileRef = ref(storage, `theory-pdfs/${Date.now()}_${theoryPdf.name}`);
+            await uploadBytes(fileRef, theoryPdf);
+            pdfUrl = await getDownloadURL(fileRef);
+            toast({ title: "PDF uploaded to Firebase" });
+          }
+        } else {
+          // Use Firebase Storage directly
+          console.log("Cloudinary not configured, using Firebase Storage");
+          const fileRef = ref(storage, `theory-pdfs/${Date.now()}_${theoryPdf.name}`);
+          await uploadBytes(fileRef, theoryPdf);
+          pdfUrl = await getDownloadURL(fileRef);
+          toast({ title: "PDF uploaded to Firebase" });
+        }
+      }
+
+      const theoryData = {
+        module: theoryForm.module.trim(),
+        question: theoryForm.question.trim(),
+        hint: theoryForm.hint.trim() || null,
+        imageUrls,
+        pdfUrl: pdfUrl || null,
+      };
+
+      if (editingTheory) {
+        await updateDoc(doc(db, "theoryQuestions", editingTheory.id), {
+          ...theoryData,
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: "Theory question updated" });
+      } else {
+        await addDoc(collection(db, "theoryQuestions"), {
+          ...theoryData,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: "Theory question added" });
+      }
+      setIsTheoryDialogOpen(false);
+      setEditingTheory(null);
+      setTheoryImages([]);
+      setTheoryPdf(null);
+    } catch (error: any) {
+      toast({
+        title: "Failed to save theory question",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingTheory(false);
+    }
+  };
+
+  const handleDeleteTheory = async (id: string) => {
+    if (!window.confirm("Delete this theory question?")) return;
+    try {
+      await deleteDoc(doc(db, "theoryQuestions", id));
+      toast({ title: "Theory question deleted" });
+    } catch (error: any) {
+      toast({
+        title: "Failed to delete",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const navigationItems = [
     { id: "questions" as AdminSection, label: "Interview Questions", icon: FileText },
+    { id: "theory-questions" as AdminSection, label: "Theory Questions", icon: Brain },
     { id: "case-studies" as AdminSection, label: "Case Studies", icon: FolderOpen },
     { id: "projects" as AdminSection, label: "Projects", icon: Briefcase },
     { id: "blog" as AdminSection, label: "Blog Posts", icon: Newspaper },
+    { id: "courses" as AdminSection, label: "Courses", icon: BookOpen },
+    { id: "about" as AdminSection, label: "About Page", icon: Users },
     { id: "services" as AdminSection, label: "Services", icon: Settings },
     { id: "testimonials" as AdminSection, label: "Testimonials", icon: Quote },
     { id: "users" as AdminSection, label: "Learner Access", icon: UserCheck },
     { id: "module-order" as AdminSection, label: "Module Order", icon: Layers },
+    { id: "question-order" as AdminSection, label: "Question Order", icon: GripVertical },
   ];
 
   const getSectionDescription = (section: AdminSection): string => {
     switch (section) {
       case "questions":
         return "Create, edit, or remove questions from the public repository.";
+      case "theory-questions":
+        return "Manage theory questions for Puzzle, AI, ML modules (no compiler needed).";
       case "case-studies":
         return "Publish detailed case studies to showcase real-world projects.";
       case "projects":
         return "Upload project resources so users can download them.";
       case "blog":
-        return "Manage blog posts that link to your Medium articles.";
+        return "Manage blog posts with images and ordering.";
+      case "courses":
+        return "Add and manage courses displayed on the Courses page.";
+      case "about":
+        return "Edit the About page content including bio, skills, and timeline.";
       case "services":
         return "Manage services that appear on the Services page.";
       case "testimonials":
@@ -1436,6 +2090,8 @@ const AdminDashboard = () => {
         return "Toggle premium access for any user after payment confirmation.";
       case "module-order":
         return "Manage the display order of modules on the Interview Prep page.";
+      case "question-order":
+        return "Set the display order of questions within each module.";
       default:
         return "";
     }
@@ -1866,9 +2522,12 @@ const AdminDashboard = () => {
                   This hint will appear on the question page (and dedicated hint page) to guide learners before revealing the full solution.
                 </p>
               </div>
-              {(questionForm.title?.toLowerCase().includes("sql") || questionForm.title?.toLowerCase().includes("mysql")) && (
+              {(questionForm.title?.toLowerCase().includes("sql") || 
+                questionForm.title?.toLowerCase().includes("mysql") ||
+                questionForm.title?.toLowerCase().includes("python") ||
+                questionForm.title?.toLowerCase().includes("pandas")) && (
                 <div className="space-y-2">
-                  <Label htmlFor="sqlTableNames">SQL Table Names (optional)</Label>
+                  <Label htmlFor="sqlTableNames">Table Names (optional)</Label>
                   <Input
                     id="sqlTableNames"
                     placeholder="e.g., customers, orders, products"
@@ -1876,7 +2535,7 @@ const AdminDashboard = () => {
                     onChange={(e) => setQuestionForm((prev) => ({ ...prev, sqlTableNames: e.target.value }))}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Comma-separated list of table names used in this SQL question. These will be used to create tables in the compiler. If not specified, table names will be extracted from the question text or JSON.
+                    Comma-separated list of table/dataframe names. For SQL: creates tables in the compiler. For Python: shows as tablename.head() in starter code.
                   </p>
                 </div>
               )}
@@ -2180,6 +2839,187 @@ id, name, salary
     </div>
   );
 
+  const renderTheoryQuestionsSection = () => (
+    <GlassCard className="p-8 space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Modules: {NON_CODE_MODULES.join(", ")}
+          </p>
+        </div>
+        <Dialog open={isTheoryDialogOpen} onOpenChange={setIsTheoryDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={() => openTheoryDialog()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Theory Question
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingTheory ? "Edit Theory Question" : "Add Theory Question"}</DialogTitle>
+              <DialogDescription>
+                Add questions for non-code modules like Puzzle, AI, ML. These won't show a compiler.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Module *</Label>
+                <Select
+                  value={theoryForm.module}
+                  onValueChange={(value) => setTheoryForm((prev) => ({ ...prev, module: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select module..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {NON_CODE_MODULES.map((mod) => (
+                      <SelectItem key={mod} value={mod}>
+                        {mod}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Question *</Label>
+                <Textarea
+                  rows={5}
+                  value={theoryForm.question}
+                  onChange={(e) => setTheoryForm((prev) => ({ ...prev, question: e.target.value }))}
+                  placeholder="Write the question here..."
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Hint (Optional)</Label>
+                <Textarea
+                  rows={3}
+                  value={theoryForm.hint}
+                  onChange={(e) => setTheoryForm((prev) => ({ ...prev, hint: e.target.value }))}
+                  placeholder="Provide a hint for the question..."
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Images (Optional)</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => setTheoryImages(Array.from(e.target.files || []))}
+                />
+                {theoryImages.length > 0 && (
+                  <p className="text-xs text-primary">
+                    {theoryImages.length} image(s) selected
+                  </p>
+                )}
+                {editingTheory?.imageUrls && editingTheory.imageUrls.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {editingTheory.imageUrls.map((url, idx) => (
+                      <img key={idx} src={url} alt={`Image ${idx + 1}`} className="w-16 h-16 object-cover rounded" />
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Images will be stored in {isSupabaseConfigured() ? "Supabase" : "Firebase Storage"}.
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>PDF (Optional)</Label>
+                <Input
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => setTheoryPdf(e.target.files?.[0] || null)}
+                />
+                {theoryPdf && (
+                  <p className="text-xs text-primary">Selected: {theoryPdf.name}</p>
+                )}
+                {editingTheory?.pdfUrl && !theoryPdf && (
+                  <a 
+                    href={editingTheory.pdfUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline"
+                  >
+                    View current PDF →
+                  </a>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  PDF will be stored in {isSupabaseConfigured() ? "Supabase" : "Firebase Storage"}.
+                </p>
+              </div>
+              
+              <Button onClick={handleSaveTheory} disabled={isSavingTheory} className="w-full">
+                {isSavingTheory ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : editingTheory ? (
+                  "Save Changes"
+                ) : (
+                  "Add Question"
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="space-y-4">
+        {theoryQuestions.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No theory questions yet. Add your first question for Puzzle, AI, or ML modules.
+          </p>
+        ) : (
+          theoryQuestions.map((theory) => (
+            <div key={theory.id} className="border border-border rounded-lg p-4 space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{theory.module}</Badge>
+                    {theory.pdfUrl && <Badge variant="outline">Has PDF</Badge>}
+                    {theory.imageUrls && theory.imageUrls.length > 0 && (
+                      <Badge variant="outline">{theory.imageUrls.length} Image(s)</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm">{theory.question.substring(0, 200)}{theory.question.length > 200 ? "..." : ""}</p>
+                  {theory.hint && (
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-semibold">Hint:</span> {theory.hint.substring(0, 100)}...
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button size="icon" variant="outline" onClick={() => openTheoryDialog(theory)}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="destructive" onClick={() => handleDeleteTheory(theory.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              {theory.imageUrls && theory.imageUrls.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {theory.imageUrls.slice(0, 4).map((url, idx) => (
+                    <img key={idx} src={url} alt={`Image ${idx + 1}`} className="w-20 h-20 object-cover rounded" />
+                  ))}
+                  {theory.imageUrls.length > 4 && (
+                    <div className="w-20 h-20 bg-muted rounded flex items-center justify-center text-sm">
+                      +{theory.imageUrls.length - 4} more
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </GlassCard>
+  );
+
   const renderCaseStudiesSection = () => (
     <GlassCard className="p-8 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -2340,98 +3180,149 @@ id, name, salary
               Add Project
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{editingProject ? "Edit Project" : "Publish Project"}</DialogTitle>
-              <DialogDescription>Provide resource details and download link.</DialogDescription>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader className="flex-shrink-0">
+              <DialogTitle>{editingProject ? "Edit Project" : "Add Project"}</DialogTitle>
+              <DialogDescription>Add a project with images, PDFs, and drive links.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Title</Label>
-                <Input
-                  value={projectForm.title}
-                  onChange={(e) => setProjectForm((prev) => ({ ...prev, title: e.target.value }))}
-                  placeholder="EDA Template Notebook"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Category</Label>
-                <Input
-                  value={projectForm.category}
-                  onChange={(e) => setProjectForm((prev) => ({ ...prev, category: e.target.value }))}
-                  placeholder="Datasets, Templates, Guides…"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Description</Label>
-                <Textarea
-                  rows={3}
-                  value={projectForm.description}
-                  onChange={(e) => setProjectForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="Short description of the resource."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Tech stack / tags (comma separated)</Label>
-                <Textarea
-                  rows={2}
-                  value={projectForm.techStack}
-                  onChange={(e) => setProjectForm((prev) => ({ ...prev, techStack: e.target.value }))}
-                  placeholder="Python, SQL, Streamlit"
-                />
-              </div>
+            <div className="space-y-4 overflow-y-auto flex-1 pr-2">
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>CTA Label</Label>
+                  <Label>Heading / Title *</Label>
                   <Input
-                    value={projectForm.ctaLabel}
-                    onChange={(e) => setProjectForm((prev) => ({ ...prev, ctaLabel: e.target.value }))}
-                    placeholder="Download"
+                    value={projectForm.title}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder="Project Title"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>CTA URL</Label>
-                  <Input
-                    value={projectForm.ctaUrl}
-                    onChange={(e) => setProjectForm((prev) => ({ ...prev, ctaUrl: e.target.value }))}
-                    placeholder="https://"
+                  <Label>Description *</Label>
+                  <Textarea
+                    rows={2}
+                    value={projectForm.description}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, description: e.target.value }))}
+                    placeholder="Brief description..."
                   />
                 </div>
               </div>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Badge (optional)</Label>
-                  <Input
-                    value={projectForm.badge}
-                    onChange={(e) => setProjectForm((prev) => ({ ...prev, badge: e.target.value }))}
-                    placeholder="New, Free, Pro…"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cover Emoji (optional)</Label>
-                  <Input
-                    value={projectForm.coverEmoji}
-                    onChange={(e) => setProjectForm((prev) => ({ ...prev, coverEmoji: e.target.value }))}
-                    placeholder="📦"
-                  />
-                </div>
-              </div>
+
+              {/* Multiple Google Drive Links */}
               <div className="space-y-2">
-                <Label>Upload file (optional)</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Google Drive Links *</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setProjectForm((prev) => ({ ...prev, driveLinks: [...prev.driveLinks, ""] }))}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add Link
+                  </Button>
+                </div>
+                {projectForm.driveLinks.map((link, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={link}
+                      onChange={(e) => {
+                        const newLinks = [...projectForm.driveLinks];
+                        newLinks[index] = e.target.value;
+                        setProjectForm((prev) => ({ ...prev, driveLinks: newLinks }));
+                      }}
+                      placeholder={`Drive link ${index + 1}`}
+                    />
+                    {projectForm.driveLinks.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          const newLinks = projectForm.driveLinks.filter((_, i) => i !== index);
+                          setProjectForm((prev) => ({ ...prev, driveLinks: newLinks }));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Multiple Images Upload */}
+              <div className="space-y-2">
+                <Label>Images (up to 4)</Label>
                 <Input
                   type="file"
-                  accept=".zip,.pdf,.ipynb,.py,.csv,.xlsx,.txt,.ppt,.pptx"
-                  onChange={(e) => setProjectFile(e.target.files?.[0] || null)}
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []).slice(0, 4);
+                    setProjectImageFiles(files);
+                  }}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Uploading a file will automatically generate the download link.
-                </p>
-                {projectFile && (
-                  <p className="text-xs text-primary">Selected: {projectFile.name}</p>
+                {projectImageFiles.length > 0 && (
+                  <p className="text-xs text-primary">Selected: {projectImageFiles.map(f => f.name).join(", ")}</p>
+                )}
+                {projectForm.imageUrls.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {projectForm.imageUrls.map((url, idx) => (
+                      <div key={idx} className="relative group">
+                        <img src={url} alt={`Image ${idx + 1}`} className="w-16 h-16 object-cover rounded" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newUrls = projectForm.imageUrls.filter((_, i) => i !== idx);
+                            setProjectForm((prev) => ({ ...prev, imageUrls: newUrls }));
+                          }}
+                          className="absolute -top-1 -right-1 bg-destructive text-white rounded-full w-4 h-4 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-              <Button onClick={handleSaveProject} disabled={isSavingProject}>
-                {isSavingProject ? "Saving..." : editingProject ? "Save changes" : "Publish project"}
+
+              {/* Multiple PDFs Upload */}
+              <div className="space-y-2">
+                <Label>PDFs (up to 4)</Label>
+                <Input
+                  type="file"
+                  accept=".pdf"
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []).slice(0, 4);
+                    setProjectPdfFiles(files);
+                  }}
+                />
+                {projectPdfFiles.length > 0 && (
+                  <p className="text-xs text-primary">Selected: {projectPdfFiles.map(f => f.name).join(", ")}</p>
+                )}
+                {projectForm.pdfUrls.length > 0 && (
+                  <div className="space-y-1">
+                    {projectForm.pdfUrls.map((url, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-xs">
+                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate flex-1">
+                          PDF {idx + 1}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newUrls = projectForm.pdfUrls.filter((_, i) => i !== idx);
+                            setProjectForm((prev) => ({ ...prev, pdfUrls: newUrls }));
+                          }}
+                          className="text-destructive hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Button onClick={handleSaveProject} disabled={isSavingProject} className="w-full">
+                {isSavingProject ? "Saving..." : editingProject ? "Save changes" : "Add Project"}
               </Button>
             </div>
           </DialogContent>
@@ -2442,32 +3333,70 @@ id, name, salary
         {projects.length === 0 ? (
           <p className="text-sm text-muted-foreground">No projects published yet.</p>
         ) : (
-          projects.map((project) => (
-            <div key={project.id} className="border border-border rounded-lg p-4 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm uppercase tracking-wide text-muted-foreground">{project.category}</p>
-                  <p className="text-lg font-semibold">{project.title}</p>
-                  <p className="text-sm text-muted-foreground">{project.description}</p>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="icon" variant="outline" onClick={() => openProjectDialog(project)}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="destructive" onClick={() => handleDeleteProject(project.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+          projects.map((project) => {
+            const images = project.imageUrls || (project.imageUrl ? [project.imageUrl] : []);
+            const pdfs = project.pdfUrls || [];
+            const links = project.driveLinks || (project.driveLink ? [project.driveLink] : []);
+            
+            return (
+              <div key={project.id} className="border border-border rounded-lg p-4 space-y-3">
+                <div className="flex gap-4">
+                  {images.length > 0 && (
+                    <div className="flex gap-1 flex-shrink-0">
+                      {images.slice(0, 2).map((url, idx) => (
+                        <img 
+                          key={idx}
+                          src={url} 
+                          alt={`${project.title} ${idx + 1}`} 
+                          className="w-16 h-16 object-cover rounded"
+                        />
+                      ))}
+                      {images.length > 2 && (
+                        <div className="w-16 h-16 bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
+                          +{images.length - 2}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-semibold">{project.title}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {links.map((link, idx) => (
+                        <a 
+                          key={idx}
+                          href={link} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Drive Link {links.length > 1 ? idx + 1 : ""} →
+                        </a>
+                      ))}
+                      {pdfs.length > 0 && (
+                        <Badge variant="secondary" className="text-xs">
+                          {pdfs.length} PDF{pdfs.length > 1 ? "s" : ""}
+                        </Badge>
+                      )}
+                      {images.length > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          {images.length} Image{images.length > 1 ? "s" : ""}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Button size="icon" variant="outline" onClick={() => openProjectDialog(project)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="destructive" onClick={() => handleDeleteProject(project.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                {project.techStack.map((tech) => (
-                  <Badge key={tech} variant="outline">
-                    {tech}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </GlassCard>
@@ -2484,22 +3413,33 @@ id, name, salary
               Add Blog Post
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>{editingBlog ? "Edit Blog Post" : "Add Blog Post"}</DialogTitle>
               <DialogDescription>
-                Add a blog post that links to your Medium article. The URL should point to your Medium post.
+                Add a blog post that links to your Medium article.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="blog-title">Title *</Label>
-                <Input
-                  id="blog-title"
-                  placeholder="Enter blog post title"
-                  value={blogForm.title}
-                  onChange={(e) => setBlogForm((prev) => ({ ...prev, title: e.target.value }))}
-                />
+            <div className="space-y-4 overflow-y-auto flex-1 pr-2">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="blog-title">Title *</Label>
+                  <Input
+                    id="blog-title"
+                    placeholder="Enter blog post title"
+                    value={blogForm.title}
+                    onChange={(e) => setBlogForm((prev) => ({ ...prev, title: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="blog-category">Category</Label>
+                  <Input
+                    id="blog-category"
+                    placeholder="e.g. Data Science, Tutorial"
+                    value={blogForm.category}
+                    onChange={(e) => setBlogForm((prev) => ({ ...prev, category: e.target.value }))}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="blog-excerpt">Excerpt *</Label>
@@ -2508,17 +3448,17 @@ id, name, salary
                   placeholder="Short description or excerpt of the blog post"
                   value={blogForm.excerpt}
                   onChange={(e) => setBlogForm((prev) => ({ ...prev, excerpt: e.target.value }))}
-                  rows={3}
+                  rows={2}
                 />
               </div>
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="blog-category">Category</Label>
+                  <Label htmlFor="blog-date">Date</Label>
                   <Input
-                    id="blog-category"
-                    placeholder="e.g. Data Science, Tutorial, Career"
-                    value={blogForm.category}
-                    onChange={(e) => setBlogForm((prev) => ({ ...prev, category: e.target.value }))}
+                    id="blog-date"
+                    placeholder="e.g. January 15, 2024"
+                    value={blogForm.date}
+                    onChange={(e) => setBlogForm((prev) => ({ ...prev, date: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
@@ -2532,15 +3472,6 @@ id, name, salary
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="blog-date">Date</Label>
-                <Input
-                  id="blog-date"
-                  placeholder="e.g. January 15, 2024"
-                  value={blogForm.date}
-                  onChange={(e) => setBlogForm((prev) => ({ ...prev, date: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="blog-url">Medium URL *</Label>
                 <Input
                   id="blog-url"
@@ -2549,27 +3480,87 @@ id, name, salary
                   value={blogForm.url}
                   onChange={(e) => setBlogForm((prev) => ({ ...prev, url: e.target.value }))}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Link to your Medium article. Example: https://medium.com/@tushar_datascience/article-title
-                </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="blog-featured"
-                  checked={blogForm.featured}
-                  onCheckedChange={(checked) => setBlogForm((prev) => ({ ...prev, featured: checked === true }))}
-                />
-                <Label htmlFor="blog-featured" className="text-sm font-normal cursor-pointer">
-                  Mark as featured (will appear in Featured section)
-                </Label>
+              <div className="space-y-2">
+                <Label>Cover Image</Label>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div>
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setBlogImageFile(e.target.files?.[0] || null)}
+                    />
+                    {blogImageFile && (
+                      <p className="text-xs text-primary mt-1">Selected: {blogImageFile.name}</p>
+                    )}
+                  </div>
+                  <Input
+                    placeholder="Or paste image URL"
+                    value={blogForm.imageUrl}
+                    onChange={(e) => setBlogForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                  />
+                </div>
+                {!blogImageFile && blogForm.imageUrl && (
+                  <p className="text-xs text-muted-foreground">Current: {blogForm.imageUrl.substring(0, 40)}...</p>
+                )}
               </div>
-              <Button onClick={handleSaveBlog} disabled={isSavingBlog}>
-                {isSavingBlog ? "Saving..." : editingBlog ? "Save changes" : "Add blog post"}
-              </Button>
+              <div className="flex items-center justify-between pt-2 border-t border-border">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="blog-featured"
+                    checked={blogForm.featured}
+                    onCheckedChange={(checked) => setBlogForm((prev) => ({ ...prev, featured: checked === true }))}
+                  />
+                  <Label htmlFor="blog-featured" className="text-sm font-normal cursor-pointer">
+                    Mark as featured
+                  </Label>
+                </div>
+                <Button onClick={handleSaveBlog} disabled={isSavingBlog}>
+                  {isSavingBlog ? "Saving..." : editingBlog ? "Save changes" : "Add blog post"}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Blog Order Section */}
+      {blogPosts.length > 1 && (
+        <div className="border border-border rounded-lg p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">Arrange Blog Posts</h3>
+            <Button size="sm" onClick={handleSaveBlogOrder}>
+              Save Order
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {blogPosts.map((blog, index) => (
+              <div key={blog.id} className="flex items-center gap-2 p-2 bg-muted/30 rounded">
+                <span className="w-6 text-center text-sm text-muted-foreground">{index + 1}</span>
+                <span className="flex-1 text-sm truncate">{blog.title}</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8"
+                  onClick={() => handleMoveBlogUp(index)}
+                  disabled={index === 0}
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8"
+                  onClick={() => handleMoveBlogDown(index)}
+                  disabled={index === blogPosts.length - 1}
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         {blogPosts.length === 0 ? (
@@ -2578,6 +3569,13 @@ id, name, salary
           blogPosts.map((blog) => (
             <div key={blog.id} className="border border-border rounded-lg p-4 space-y-2">
               <div className="flex items-start justify-between gap-4">
+                {blog.imageUrl && (
+                  <img 
+                    src={blog.imageUrl} 
+                    alt={blog.title} 
+                    className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
+                  />
+                )}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <Badge variant={blog.featured ? "default" : "outline"}>
@@ -2614,6 +3612,341 @@ id, name, salary
             </div>
           ))
         )}
+      </div>
+    </GlassCard>
+  );
+
+  const renderCoursesSection = () => (
+    <GlassCard className="p-8 space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div></div>
+        <Dialog open={isCourseDialogOpen} onOpenChange={setIsCourseDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={() => openCourseDialog()}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Course
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingCourse ? "Edit Course" : "Add Course"}</DialogTitle>
+              <DialogDescription>
+                Add a course that will be displayed on the Courses page.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Course Title *</Label>
+                <Input
+                  placeholder="e.g. Full-Stack Data Science with GenAI"
+                  value={courseForm.title}
+                  onChange={(e) => setCourseForm((prev) => ({ ...prev, title: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Description *</Label>
+                <Textarea
+                  rows={3}
+                  placeholder="Brief description of the course..."
+                  value={courseForm.description}
+                  onChange={(e) => setCourseForm((prev) => ({ ...prev, description: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Highlights (one per line)</Label>
+                <Textarea
+                  rows={4}
+                  placeholder="Full-stack data science curriculum&#10;Hands-on labs&#10;Interview preparation"
+                  value={courseForm.highlights}
+                  onChange={(e) => setCourseForm((prev) => ({ ...prev, highlights: e.target.value }))}
+                />
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Platform</Label>
+                  <Input
+                    placeholder="e.g. Udemy, Coursera"
+                    value={courseForm.platform}
+                    onChange={(e) => setCourseForm((prev) => ({ ...prev, platform: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Platform Label</Label>
+                  <Input
+                    placeholder="e.g. Udemy · Lifetime access"
+                    value={courseForm.platformLabel}
+                    onChange={(e) => setCourseForm((prev) => ({ ...prev, platformLabel: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Course URL *</Label>
+                  <Input
+                    placeholder="https://udemy.com/course/..."
+                    value={courseForm.courseUrl}
+                    onChange={(e) => setCourseForm((prev) => ({ ...prev, courseUrl: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Price (optional)</Label>
+                  <Input
+                    placeholder="e.g. ₹499 or Free"
+                    value={courseForm.price}
+                    onChange={(e) => setCourseForm((prev) => ({ ...prev, price: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Cover Image</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setCourseImageFile(e.target.files?.[0] || null)}
+                />
+                {courseImageFile && <p className="text-xs text-primary">Selected: {courseImageFile.name}</p>}
+                {!courseImageFile && courseForm.imageUrl && (
+                  <p className="text-xs text-muted-foreground">Current: {courseForm.imageUrl.substring(0, 40)}...</p>
+                )}
+                <Input
+                  placeholder="Or paste image URL"
+                  value={courseForm.imageUrl}
+                  onChange={(e) => setCourseForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="course-featured"
+                  checked={courseForm.featured}
+                  onCheckedChange={(checked) => setCourseForm((prev) => ({ ...prev, featured: checked === true }))}
+                />
+                <Label htmlFor="course-featured" className="text-sm font-normal cursor-pointer">
+                  Mark as featured
+                </Label>
+              </div>
+              <Button onClick={handleSaveCourse} disabled={isSavingCourse} className="w-full">
+                {isSavingCourse ? "Saving..." : editingCourse ? "Save Changes" : "Add Course"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="space-y-4">
+        {courses.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No courses yet. Add your first course.
+          </p>
+        ) : (
+          courses.map((course) => (
+            <div key={course.id} className="border border-border rounded-lg p-4">
+              <div className="flex items-start gap-4">
+                {course.imageUrl && (
+                  <img
+                    src={course.imageUrl}
+                    alt={course.title}
+                    className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    {course.featured && <Badge>Featured</Badge>}
+                    {course.platform && <Badge variant="outline">{course.platform}</Badge>}
+                    {course.price && <Badge variant="secondary">{course.price}</Badge>}
+                  </div>
+                  <p className="text-lg font-semibold">{course.title}</p>
+                  <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{course.description}</p>
+                  {course.courseUrl && (
+                    <a
+                      href={course.courseUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline mt-2 inline-block"
+                    >
+                      View Course →
+                    </a>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button size="icon" variant="outline" onClick={() => openCourseDialog(course)}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="destructive" onClick={() => handleDeleteCourse(course.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </GlassCard>
+  );
+
+  const renderAboutSection = () => (
+    <GlassCard className="p-8 space-y-6">
+      <div className="space-y-6">
+        {/* Basic Info */}
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Name *</Label>
+            <Input
+              placeholder="Your name"
+              value={aboutForm.name}
+              onChange={(e) => setAboutForm((prev) => ({ ...prev, name: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Title / Role</Label>
+            <Input
+              placeholder="e.g. Data Scientist | Mentor | Educator"
+              value={aboutForm.title}
+              onChange={(e) => setAboutForm((prev) => ({ ...prev, title: e.target.value }))}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Avatar Image</Label>
+          <Input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setAboutAvatarFile(e.target.files?.[0] || null)}
+          />
+          {aboutAvatarFile && <p className="text-xs text-primary">Selected: {aboutAvatarFile.name}</p>}
+          {aboutForm.avatarUrl && (
+            <div className="flex items-center gap-4">
+              <img src={aboutForm.avatarUrl} alt="Current avatar" className="w-16 h-16 rounded-full object-cover" />
+              <Input
+                placeholder="Or paste image URL"
+                value={aboutForm.avatarUrl}
+                onChange={(e) => setAboutForm((prev) => ({ ...prev, avatarUrl: e.target.value }))}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label>Story / Bio *</Label>
+          <Textarea
+            rows={6}
+            placeholder="Write your story here..."
+            value={aboutForm.story}
+            onChange={(e) => setAboutForm((prev) => ({ ...prev, story: e.target.value }))}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Skills (comma-separated)</Label>
+          <Input
+            placeholder="Python, SQL, Machine Learning, Deep Learning, NLP"
+            value={aboutForm.skills}
+            onChange={(e) => setAboutForm((prev) => ({ ...prev, skills: e.target.value }))}
+          />
+        </div>
+
+        {/* Timeline */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-base font-semibold">Experience Timeline</Label>
+            <Button size="sm" variant="outline" onClick={addTimelineItem}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add Entry
+            </Button>
+          </div>
+          {aboutForm.timeline.map((item, index) => (
+            <div key={index} className="border border-border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Entry {index + 1}</span>
+                <Button size="icon" variant="ghost" onClick={() => removeTimelineItem(index)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  placeholder="Year (e.g. 2024)"
+                  value={item.year}
+                  onChange={(e) => updateTimelineItem(index, "year", e.target.value)}
+                />
+                <Input
+                  placeholder="Title (e.g. Senior Data Scientist)"
+                  value={item.title}
+                  onChange={(e) => updateTimelineItem(index, "title", e.target.value)}
+                />
+                <Input
+                  placeholder="Company"
+                  value={item.company}
+                  onChange={(e) => updateTimelineItem(index, "company", e.target.value)}
+                />
+                <Input
+                  placeholder="Description"
+                  value={item.desc}
+                  onChange={(e) => updateTimelineItem(index, "desc", e.target.value)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Achievements */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label className="text-base font-semibold">Achievements</Label>
+            <Button size="sm" variant="outline" onClick={addAchievementItem}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add Achievement
+            </Button>
+          </div>
+          {aboutForm.achievements.map((item, index) => (
+            <div key={index} className="border border-border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Achievement {index + 1}</span>
+                <Button size="icon" variant="ghost" onClick={() => removeAchievementItem(index)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <Select
+                  value={item.icon}
+                  onValueChange={(value) => updateAchievementItem(index, "icon", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Icon" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Award">Award</SelectItem>
+                    <SelectItem value="Briefcase">Briefcase</SelectItem>
+                    <SelectItem value="GraduationCap">GraduationCap</SelectItem>
+                    <SelectItem value="Users">Users</SelectItem>
+                    <SelectItem value="Code">Code</SelectItem>
+                    <SelectItem value="Brain">Brain</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  placeholder="Value (e.g. 500+)"
+                  value={item.value}
+                  onChange={(e) => updateAchievementItem(index, "value", e.target.value)}
+                />
+                <Input
+                  placeholder="Label (e.g. Students Mentored)"
+                  value={item.label}
+                  onChange={(e) => updateAchievementItem(index, "label", e.target.value)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <Button onClick={handleSaveAbout} disabled={isSavingAbout} className="w-full">
+          {isSavingAbout ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            "Save About Page"
+          )}
+        </Button>
       </div>
     </GlassCard>
   );
@@ -3261,16 +4594,303 @@ id, name, salary
     );
   };
 
+  const renderQuestionOrderSection = () => {
+    // Get questions for selected module
+    const moduleQuestions = selectedModuleForQuestionOrder
+      ? questions
+          .filter((q) => (q.title?.trim() || DEFAULT_TITLE) === selectedModuleForQuestionOrder)
+          .sort((a, b) => {
+            // Sort by order if available, otherwise by createdAt
+            if (a.order !== undefined && b.order !== undefined) {
+              return a.order - b.order;
+            }
+            if (a.order !== undefined) return -1;
+            if (b.order !== undefined) return 1;
+            // Fall back to createdAt
+            if (a.createdAt && b.createdAt) {
+              return a.createdAt.getTime() - b.createdAt.getTime();
+            }
+            return 0;
+          })
+      : [];
+
+    // Get ordered questions based on local state or original order
+    const getOrderedQuestions = () => {
+      if (questionOrderMap[selectedModuleForQuestionOrder]) {
+        return questionOrderMap[selectedModuleForQuestionOrder]
+          .map((id) => moduleQuestions.find((q) => q.id === id))
+          .filter(Boolean) as InterviewQuestion[];
+      }
+      return moduleQuestions;
+    };
+
+    const handleMoveToPosition = (currentIndex: number, newPosition: number) => {
+      const currentOrdered = getOrderedQuestions();
+      if (newPosition < 1 || newPosition > currentOrdered.length) return;
+      if (currentIndex === newPosition - 1) return; // Same position
+      
+      const newOrder = [...currentOrdered];
+      const [movedItem] = newOrder.splice(currentIndex, 1);
+      newOrder.splice(newPosition - 1, 0, movedItem);
+      
+      setQuestionOrderMap((prev) => ({
+        ...prev,
+        [selectedModuleForQuestionOrder]: newOrder.map((q) => q.id),
+      }));
+    };
+
+    const handleMoveQuestionUp = (index: number) => {
+      if (index === 0) return;
+      handleMoveToPosition(index, index); // Move to position = index (0-indexed becomes 1-indexed - 1)
+    };
+
+    const handleMoveQuestionDown = (index: number) => {
+      const currentOrdered = getOrderedQuestions();
+      if (index === currentOrdered.length - 1) return;
+      handleMoveToPosition(index, index + 2); // Move to next position
+    };
+
+    const handleMoveToTop = (index: number) => {
+      if (index === 0) return;
+      handleMoveToPosition(index, 1);
+    };
+
+    const handleMoveToBottom = (index: number) => {
+      const currentOrdered = getOrderedQuestions();
+      if (index === currentOrdered.length - 1) return;
+      handleMoveToPosition(index, currentOrdered.length);
+    };
+
+    const handleSaveQuestionOrder = async () => {
+      if (!selectedModuleForQuestionOrder) return;
+      
+      setSavingQuestionOrder(true);
+      try {
+        // Get the current order from questionOrderMap or use moduleQuestions order
+        const orderedIds = questionOrderMap[selectedModuleForQuestionOrder] || moduleQuestions.map((q) => q.id);
+        
+        // Update each question with its new order
+        const updatePromises = orderedIds.map((questionId, index) => {
+          const questionRef = doc(db, "interviewQuestions", questionId);
+          return updateDoc(questionRef, { order: index });
+        });
+        
+        await Promise.all(updatePromises);
+        
+        toast({
+          title: "Question order saved",
+          description: `Updated order for ${orderedIds.length} questions in "${selectedModuleForQuestionOrder}".`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Failed to save order",
+          description: error.message || "Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setSavingQuestionOrder(false);
+      }
+    };
+
+    const orderedQuestions = getOrderedQuestions();
+
+    return (
+      <GlassCard className="p-6 space-y-6">
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold">Question Display Order</h2>
+          <p className="text-sm text-muted-foreground">
+            Select a module and reorder questions. Use the position input to move questions directly to any position,
+            or use the arrow buttons. Click the double arrows to move to top/bottom.
+          </p>
+        </div>
+
+        {/* Module Selector */}
+        <div className="space-y-2">
+          <Label>Select Module</Label>
+          <Select
+            value={selectedModuleForQuestionOrder}
+            onValueChange={(value) => {
+              setSelectedModuleForQuestionOrder(value);
+              // Clear local order state when switching modules
+              setQuestionOrderMap((prev) => {
+                const newMap = { ...prev };
+                delete newMap[value];
+                return newMap;
+              });
+            }}
+          >
+            <SelectTrigger className="w-full max-w-md">
+              <SelectValue placeholder="Choose a module..." />
+            </SelectTrigger>
+            <SelectContent>
+              {uniqueTitles.map((title) => (
+                <SelectItem key={title} value={title}>
+                  {title} ({questions.filter((q) => (q.title?.trim() || DEFAULT_TITLE) === title).length} questions)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {!selectedModuleForQuestionOrder ? (
+          <div className="text-center py-12">
+            <GripVertical className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">Select a module to manage question order.</p>
+          </div>
+        ) : orderedQuestions.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">No questions in this module.</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              {orderedQuestions.map((question, index) => (
+                <div
+                  key={question.id}
+                  className="flex items-center gap-3 p-4 border border-border rounded-lg bg-background/50 hover:bg-background transition-colors"
+                >
+                  {/* Position Input */}
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="h-5 w-5 text-muted-foreground" />
+                    <Input
+                      type="number"
+                      min={1}
+                      max={orderedQuestions.length}
+                      value={index + 1}
+                      onChange={(e) => {
+                        const newPos = parseInt(e.target.value, 10);
+                        if (!isNaN(newPos) && newPos >= 1 && newPos <= orderedQuestions.length) {
+                          handleMoveToPosition(index, newPos);
+                        }
+                      }}
+                      className="w-16 h-8 text-center text-sm font-medium"
+                    />
+                    <span className="text-xs text-muted-foreground">/ {orderedQuestions.length}</span>
+                  </div>
+                  
+                  {/* Question Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">
+                      {question.questionTitle || question.question?.substring(0, 50) || "Untitled"}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant={question.tier === "paid" ? "default" : "secondary"} className="text-xs">
+                        {question.tier}
+                      </Badge>
+                      {question.difficulty && (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-xs",
+                            question.difficulty === "easy" && "border-green-500 text-green-500",
+                            question.difficulty === "medium" && "border-yellow-500 text-yellow-500",
+                            question.difficulty === "hard" && "border-red-500 text-red-500"
+                          )}
+                        >
+                          {question.difficulty}
+                        </Badge>
+                      )}
+                      {question.company && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <CompanyLogo companyName={question.company} size={12} />
+                          {question.company}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Move Controls */}
+                  <div className="flex items-center gap-1">
+                    {/* Move to Top */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleMoveToTop(index)}
+                      disabled={index === 0}
+                      className="h-8 w-8"
+                      title="Move to top"
+                    >
+                      <ChevronsUp className="h-4 w-4" />
+                    </Button>
+                    {/* Move Up */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleMoveQuestionUp(index)}
+                      disabled={index === 0}
+                      className="h-8 w-8"
+                      title="Move up one"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </Button>
+                    {/* Move Down */}
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => handleMoveQuestionDown(index)}
+                      disabled={index === orderedQuestions.length - 1}
+                      className="h-8 w-8"
+                      title="Move down one"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </Button>
+                    {/* Move to Bottom */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleMoveToBottom(index)}
+                      disabled={index === orderedQuestions.length - 1}
+                      className="h-8 w-8"
+                      title="Move to bottom"
+                    >
+                      <ChevronsDown className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSaveQuestionOrder}
+                disabled={savingQuestionOrder}
+                className="bg-gradient-primary hover:shadow-glow-primary"
+              >
+                {savingQuestionOrder ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <GripVertical className="mr-2 h-4 w-4" />
+                    Save Question Order
+                  </>
+                )}
+              </Button>
+            </div>
+          </>
+        )}
+      </GlassCard>
+    );
+  };
+
   const renderContent = () => {
     switch (activeSection) {
       case "questions":
         return renderQuestionsSection();
+      case "theory-questions":
+        return renderTheoryQuestionsSection();
       case "case-studies":
         return renderCaseStudiesSection();
       case "projects":
         return renderProjectsSection();
       case "blog":
         return renderBlogSection();
+      case "courses":
+        return renderCoursesSection();
+      case "about":
+        return renderAboutSection();
       case "services":
         return renderServicesSection();
       case "testimonials":
@@ -3279,6 +4899,8 @@ id, name, salary
         return renderUsersSection();
       case "module-order":
         return renderModuleOrderSection();
+      case "question-order":
+        return renderQuestionOrderSection();
       default:
         return renderQuestionsSection();
     }

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import GlassCard from "@/components/GlassCard";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Clock, ArrowRight } from "lucide-react";
+import { Clock, ArrowRight, Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +15,8 @@ type BlogPost = {
   date?: string;
   featured?: boolean;
   url?: string;
+  imageUrl?: string;
+  order?: number;
 };
 
 const Blog = () => {
@@ -24,25 +25,32 @@ const Blog = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, "blogPosts"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "blogPosts"), orderBy("order", "asc"));
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        setPosts(
-          snapshot.docs.map((doc) => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              title: data.title || "Untitled post",
-              excerpt: data.excerpt || "",
-              category: data.category || "General",
-              readTime: data.readTime,
-              date: data.date,
-              featured: Boolean(data.featured),
-              url: data.url,
-            } as BlogPost;
-          }),
-        );
+        const items = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title || "Untitled post",
+            excerpt: data.excerpt || "",
+            category: data.category || "General",
+            readTime: data.readTime,
+            date: data.date,
+            featured: Boolean(data.featured),
+            url: data.url,
+            imageUrl: data.imageUrl,
+            order: data.order ?? 999,
+          } as BlogPost;
+        });
+        // Sort by order, with featured at top
+        items.sort((a, b) => {
+          if (a.featured && !b.featured) return -1;
+          if (!a.featured && b.featured) return 1;
+          return (a.order ?? 999) - (b.order ?? 999);
+        });
+        setPosts(items);
         setLoading(false);
       },
       (error) => {
@@ -75,7 +83,9 @@ const Blog = () => {
         </div>
 
         {loading ? (
-          <p className="text-center text-muted-foreground">Loading posts…</p>
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
         ) : posts.length === 0 ? (
           <GlassCard className="text-center py-12 bg-gradient-subtle">
             <h2 className="text-2xl font-semibold mb-2">No posts yet</h2>
@@ -126,8 +136,25 @@ const BlogCard = ({ post, compact }: { post: BlogPost; compact?: boolean }) => {
         <div className={compact ? "flex gap-6" : "space-y-4"}>
           {!compact && (
             <div className="h-48 bg-gradient-subtle rounded-lg flex items-center justify-center overflow-hidden relative">
-              <div className="text-6xl">📝</div>
+              {post.imageUrl ? (
+                <img
+                  src={post.imageUrl}
+                  alt={post.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="text-6xl">📝</div>
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-background/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          )}
+          {compact && post.imageUrl && (
+            <div className="w-24 h-24 flex-shrink-0 rounded-lg overflow-hidden">
+              <img
+                src={post.imageUrl}
+                alt={post.title}
+                className="w-full h-full object-cover"
+              />
             </div>
           )}
           <div className="flex-1 space-y-3">
@@ -165,4 +192,3 @@ const BlogCard = ({ post, compact }: { post: BlogPost; compact?: boolean }) => {
 };
 
 export default Blog;
-

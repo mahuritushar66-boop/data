@@ -72,7 +72,8 @@ export const PISTON_LANGUAGES: { [key: string]: { name: string; version: string 
   perl: { name: 'perl', version: '5.34.0' },
   r: { name: 'r', version: '4.3.0' },
   bash: { name: 'bash', version: '5.2.0' },
-  // Note: SQL is handled separately using sql.js (browser-based)
+  sql: { name: 'sqlite3', version: '3.36.0' },
+  mysql: { name: 'mysql', version: '8.0' }, // Using OneCompiler for MySQL
 };
 
 // Language ID mapping for Judge0 API
@@ -371,6 +372,102 @@ const executeCodeJudge0 = async (
   }
 };
 
+// Execute MySQL code using OneCompiler API (FREE)
+const executeMySql = async (
+  sourceCode: string
+): Promise<{ output: string; error: string | null; time: string | null; memory: number | null }> => {
+  try {
+    // Use OneCompiler's free API endpoint
+    const response = await fetch('https://onecompiler.com/api/v1/run?access_token=free', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        language: 'mysql',
+        stdin: '',
+        files: [
+          {
+            name: 'main.sql',
+            content: sourceCode,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      // Fallback to alternative method
+      return executeMySqlFallback(sourceCode);
+    }
+
+    const result = await response.json();
+    
+    if (result.stderr) {
+      return {
+        output: result.stdout || '',
+        error: result.stderr,
+        time: null,
+        memory: null,
+      };
+    }
+
+    return {
+      output: result.stdout || result.output || '(Query executed successfully)',
+      error: null,
+      time: null,
+      memory: null,
+    };
+  } catch (error: any) {
+    // Try fallback
+    return executeMySqlFallback(sourceCode);
+  }
+};
+
+// Fallback MySQL execution using SQL Fiddle style API
+const executeMySqlFallback = async (
+  sourceCode: string
+): Promise<{ output: string; error: string | null; time: string | null; memory: number | null }> => {
+  try {
+    // Use Rextester API as fallback (supports MySQL)
+    const response = await fetch('https://rextester.com/rundotnet/api', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        LanguageChoice: '33', // MySQL
+        Program: sourceCode,
+        Input: '',
+        CompilerArgs: '',
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('MySQL execution failed');
+    }
+
+    const result = await response.json();
+    
+    if (result.Errors) {
+      return {
+        output: result.Result || '',
+        error: result.Errors,
+        time: null,
+        memory: null,
+      };
+    }
+
+    return {
+      output: result.Result || '(Query executed successfully)',
+      error: null,
+      time: null,
+      memory: null,
+    };
+  } catch (error: any) {
+    throw new Error(`MySQL execution failed: ${error.message}. Please check your SQL syntax.`);
+  }
+};
+
 // Main execute function - automatically chooses the best service
 export const executeCode = async (
   sourceCode: string,
@@ -378,6 +475,11 @@ export const executeCode = async (
   stdin?: string,
   maxWaitTime: number = 10000
 ): Promise<{ output: string; error: string | null; time: string | null; memory: number | null }> => {
+  // Special handling for MySQL
+  if (language.toLowerCase() === 'mysql' || language.toLowerCase() === 'sql') {
+    return executeMySql(sourceCode);
+  }
+  
   const service = getExecutionService();
   
   if (service === 'piston') {

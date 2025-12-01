@@ -23,6 +23,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import InterviewModule from "./pages/InterviewModule";
 import QuestionDetail from "./pages/QuestionDetail";
 import QuestionHint from "./pages/QuestionHint";
+import TheoryQuestionDetail from "./pages/TheoryQuestionDetail";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsAndConditions from "./pages/TermsAndConditions";
 import Profile from "./pages/Profile";
@@ -35,8 +36,8 @@ const queryClient = new QueryClient();
 const AppContent = () => {
   const location = useLocation();
   
-  // Hide footer on interview prep sub-pages (but show on main interview prep page)
-  const hideFooter = location.pathname.startsWith("/interview-prep") && location.pathname !== "/interview-prep";
+  // Hide footer on interview prep sub-pages (but show on main interview prep page) and theory questions
+  const hideFooter = (location.pathname.startsWith("/interview-prep") && location.pathname !== "/interview-prep") || location.pathname.startsWith("/theory-question");
   
   // Hide navbar padding on question pages (they have their own custom header)
   const isQuestionPage = location.pathname.startsWith("/interview-prep/question") && !location.pathname.includes("/hint");
@@ -52,6 +53,7 @@ const AppContent = () => {
           <Route path="/interview-prep/module/:moduleSlug" element={<InterviewModule />} />
           <Route path="/interview-prep/question/:questionId" element={<QuestionDetail />} />
           <Route path="/interview-prep/question/:questionId/hint" element={<QuestionHint />} />
+          <Route path="/theory-question/:questionId" element={<TheoryQuestionDetail />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/payment" element={<PaymentPage />} />

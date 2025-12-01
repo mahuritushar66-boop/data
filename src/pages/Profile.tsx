@@ -164,7 +164,7 @@ const Profile = () => {
                       {profile.xp || 0} XP
                     </Badge>
                     <p className="text-sm text-muted-foreground">
-                      Earn 25 XP for each completed question!
+                      Easy: 10 XP • Medium: 20 XP • Hard: 25 XP
                     </p>
                   </div>
                 </div>

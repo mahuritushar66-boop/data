@@ -266,7 +266,7 @@ const renderQuestionContent = (questionText: string) => {
           } else {
             // Render text with line breaks
             return (
-              <div key={idx} className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
+              <div key={idx} className="leading-relaxed whitespace-pre-wrap text-foreground/90" style={{ fontSize: '16px' }}>
                 {(part.content as string).split('\n').map((line, lineIdx) => (
                   <p key={lineIdx} className="mb-2 last:mb-0">
                     {line || '\u00A0'}
@@ -282,7 +282,7 @@ const renderQuestionContent = (questionText: string) => {
 
   // Otherwise, render as regular text with line breaks
   return (
-    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 space-y-3">
+    <div className="leading-relaxed whitespace-pre-wrap text-foreground/90 space-y-3" style={{ fontSize: '15px' }}>
       {questionText.split('\n').map((line, idx) => (
         <p key={idx} className="mb-2 last:mb-0">
           {line || '\u00A0'}
@@ -507,7 +507,7 @@ const QuestionDetail = () => {
         
         let snapshot;
         try {
-          // Try to fetch with orderBy first - use DESC to match the listing page order
+          // Try to fetch with orderBy first
           const questionsQuery = query(
             collection(db, "interviewQuestions"),
             orderBy("createdAt", "desc")
@@ -525,27 +525,35 @@ const QuestionDetail = () => {
             id: doc.id,
             title: data.title || "General",
             createdAt: data.createdAt,
+            order: data.order,
           };
         });
 
-        // Sort by createdAt DESC (newest first) to match listing page, otherwise by ID
-        allQuestions.sort((a, b) => {
-          if (a.createdAt && b.createdAt) {
-            // Descending order (newest first) to match listing page
-            return b.createdAt.toMillis() - a.createdAt.toMillis();
-          }
-          return b.id.localeCompare(a.id); // Also descending for ID fallback
-        });
-
-        // Filter by module title and find next question
+        // Filter by module title first
         const moduleQuestions = allQuestions.filter(q => {
           const qTitle = q.title || "General";
           return qTitle === moduleTitle || qTitle === (moduleTitle || "General");
         });
+
+        // Sort by order if available, otherwise by createdAt (newest first)
+        moduleQuestions.sort((a, b) => {
+          // If both have order, sort by order (ascending)
+          if (a.order !== undefined && b.order !== undefined) {
+            return a.order - b.order;
+          }
+          // If only one has order, prioritize the one with order
+          if (a.order !== undefined) return -1;
+          if (b.order !== undefined) return 1;
+          // Fall back to createdAt (newest first)
+          if (a.createdAt && b.createdAt) {
+            return b.createdAt.toMillis() - a.createdAt.toMillis();
+          }
+          return b.id.localeCompare(a.id);
+        });
         
         console.log("Total questions:", allQuestions.length);
         console.log("Module questions found:", moduleQuestions.length);
-        console.log("Module questions:", moduleQuestions.map(q => ({ id: q.id, title: q.title })));
+        console.log("Module questions:", moduleQuestions.map(q => ({ id: q.id, title: q.title, order: q.order })));
         
         const currentIndex = moduleQuestions.findIndex(q => q.id === questionId);
         console.log("Current question index:", currentIndex);
@@ -987,6 +995,7 @@ const QuestionDetail = () => {
                       expectedOutput={question.expectedOutput}
                       hideOutput={true}
                       sqlTableNames={question.sqlTableNames}
+                      difficulty={question.difficulty}
                       onOutputChange={(outputData, textOutputData) => {
                         setOutput(outputData);
                         setTextOutput(textOutputData);

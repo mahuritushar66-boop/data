@@ -20,6 +20,7 @@ interface CodeEditorProps {
   expectedOutput?: string; // Expected output for validation
   hideOutput?: boolean; // Hide output section (for separate display)
   sqlTableNames?: string; // Comma-separated table names for SQL questions
+  difficulty?: "easy" | "medium" | "hard"; // Question difficulty for XP calculation
   onOutputChange?: (output: { columns: string[]; values: any[][] } | null, textOutput: string | null) => void; // Callback for output changes
   onValidationChange?: (result: { passed: boolean; message?: string } | null) => void; // Callback for validation changes
 }
@@ -192,9 +193,20 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
   return tables;
 };
 
-const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, questionId, expectedOutput, hideOutput = false, sqlTableNames, onOutputChange, onValidationChange }: CodeEditorProps) => {
+const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, questionId, expectedOutput, hideOutput = false, sqlTableNames, difficulty, onOutputChange, onValidationChange }: CodeEditorProps) => {
   const { currentUser } = useAuth();
   const [hasAwardedXP, setHasAwardedXP] = useState(false);
+  const [awardedXPAmount, setAwardedXPAmount] = useState(0);
+
+  // Calculate XP based on difficulty
+  const getXPForDifficulty = (diff?: "easy" | "medium" | "hard"): number => {
+    switch (diff) {
+      case "easy": return 10;
+      case "medium": return 20;
+      case "hard": return 25;
+      default: return 10; // Default to easy if no difficulty set
+    }
+  };
   // Get comment syntax based on language
   const getCommentPrefix = (lang: string): string => {
     if (lang === "python") return "#";
@@ -234,6 +246,9 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     const instruction = getInstructionLine(lang);
     switch (lang) {
       case "python":
+        if (firstTableName) {
+          return `${instruction}\nimport pandas as pd\nimport numpy as np\n\n${firstTableName}.head()`;
+        }
         return `${instruction}\nimport pandas as pd\nimport numpy as np\n\nprint('Hello, World!')`;
       case "sql":
         // Use the first available table name, or a generic one
@@ -273,26 +288,29 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     // Don't add question text to the compiler - just add starter code
     let initialCode = "";
     
-    // Add starter code - for SQL, use the first table name from parsed questionTables
+    // Add starter code - extract table name for SQL and Python
     let firstTableName: string | undefined;
-    if (language === "sql" && questionTables.length > 0) {
+    
+    // For both SQL and Python, try to get the table name from admin-provided names
+    if ((language === "sql" || language === "python") && questionTables.length > 0) {
       // Use the actual table name from the parsed tables (this uses the correct priority)
       firstTableName = questionTables[0].tableName;
       console.log("Using table name from questionTables for starter code:", firstTableName);
-    } else if (language === "sql" && question) {
+    } else if ((language === "sql" || language === "python") && sqlTableNames) {
       // Fallback: try to extract first table name from admin-provided names
-      if (sqlTableNames) {
         const names = sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0);
-        if (names.length > 0) firstTableName = names[0];
+      if (names.length > 0) {
+        firstTableName = names[0];
+        console.log("Using admin-provided table name for starter code:", firstTableName);
       }
-      // If not found, try to extract from question text
-      if (!firstTableName) {
+    } else if (language === "sql" && question) {
+      // SQL-specific fallback: try to extract from question text
         const tableMatch = question.match(/(?:FROM|from|table|Table|TABLE)[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/i);
         if (tableMatch && tableMatch[1]) {
           firstTableName = tableMatch[1].toLowerCase();
         }
       }
-    }
+    
     initialCode = getStarterCode(language, firstTableName);
     return initialCode;
   }, [defaultValue, question, language, sqlTableNames, questionTables]);
@@ -384,7 +402,9 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         });
       }
 
-      // Award XP (25 points per question)
+      // Award XP based on difficulty (easy: 10, medium: 20, hard: 25)
+      const xpAmount = getXPForDifficulty(difficulty);
+      
       // First check if user document exists
       const userRef = doc(firestoreDb, "users", currentUser.uid);
       const userSnap = await getDoc(userRef);
@@ -392,17 +412,18 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       if (userSnap.exists()) {
         // Update existing user document
         await updateDoc(userRef, {
-          xp: increment(25),
+          xp: increment(xpAmount),
           updatedAt: serverTimestamp(),
         });
       } else {
         // Create new user document if it doesn't exist
         await setDoc(userRef, {
-          xp: 25,
+          xp: xpAmount,
           updatedAt: serverTimestamp(),
         });
       }
 
+      setAwardedXPAmount(xpAmount);
       setHasAwardedXP(true);
       console.log("trackQuestionCompletion: XP awarded successfully, returning true");
       // Don't show toast here, let the modal handle it
@@ -557,8 +578,26 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           const pyodideInstance = await pyodideModule.loadPyodide({
             indexURL: "https://cdn.jsdelivr.net/pyodide/v0.29.0/full/",
           });
-          pyodidePackagesLoaded.current = new Set();
+          
+          // Pre-load essential packages
+          toast({
+            title: "Loading Python libraries...",
+            description: "This may take a few seconds on first load.",
+          });
+          
+          try {
+            await pyodideInstance.loadPackage(["numpy", "pandas"]);
+            pyodidePackagesLoaded.current = new Set(["numpy", "pandas"]);
+          } catch (pkgError) {
+            console.warn("Could not pre-load packages:", pkgError);
+            pyodidePackagesLoaded.current = new Set();
+          }
+          
           setPyodide(pyodideInstance);
+          toast({
+            title: "Python ready!",
+            description: "You can now run Python code.",
+          });
         } catch (error) {
           console.error("Failed to load Pyodide:", error);
           toast({
@@ -580,12 +619,22 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     let cancelled = false;
 
     const loadSqlJs = async () => {
-        try {
-          const SQL = await initSqlJs({
-            locateFile: (file) => `https://sql.js.org/dist/${file}`,
-          });
+      try {
+        toast({
+          title: "Loading SQL environment...",
+          description: "Setting up the database engine.",
+        });
+        
+        const SQL = await initSqlJs({
+          locateFile: (file) => `https://sql.js.org/dist/${file}`,
+        });
+        
         if (!cancelled) {
           setSqlJs(SQL);
+          toast({
+            title: "SQL ready!",
+            description: "You can now run SQL queries.",
+          });
         }
       } catch (error) {
         console.error("Failed to initialize SQL.js:", error);
@@ -869,6 +918,8 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     async (codeSnippet: string) => {
       if (!pyodide) return true;
       const snippet = codeSnippet || "";
+      
+      // Extended list of supported packages in Pyodide
       const packagePatterns: Array<{ name: string; patterns: RegExp[] }> = [
         {
           name: "pandas",
@@ -881,6 +932,58 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         {
           name: "matplotlib",
           patterns: [/\bimport\s+matplotlib\b/i, /\bfrom\s+matplotlib\b/i],
+        },
+        {
+          name: "scipy",
+          patterns: [/\bimport\s+scipy\b/i, /\bfrom\s+scipy\b/i],
+        },
+        {
+          name: "scikit-learn",
+          patterns: [/\bimport\s+sklearn\b/i, /\bfrom\s+sklearn\b/i, /\bimport\s+scikit/i],
+        },
+        {
+          name: "seaborn",
+          patterns: [/\bimport\s+seaborn\b/i, /\bfrom\s+seaborn\b/i],
+        },
+        {
+          name: "statsmodels",
+          patterns: [/\bimport\s+statsmodels\b/i, /\bfrom\s+statsmodels\b/i],
+        },
+        {
+          name: "networkx",
+          patterns: [/\bimport\s+networkx\b/i, /\bfrom\s+networkx\b/i],
+        },
+        {
+          name: "sympy",
+          patterns: [/\bimport\s+sympy\b/i, /\bfrom\s+sympy\b/i],
+        },
+        {
+          name: "pillow",
+          patterns: [/\bimport\s+PIL\b/i, /\bfrom\s+PIL\b/i],
+        },
+        {
+          name: "regex",
+          patterns: [/\bimport\s+regex\b/i, /\bfrom\s+regex\b/i],
+        },
+        {
+          name: "beautifulsoup4",
+          patterns: [/\bimport\s+bs4\b/i, /\bfrom\s+bs4\b/i, /\bBeautifulSoup\b/],
+        },
+        {
+          name: "lxml",
+          patterns: [/\bimport\s+lxml\b/i, /\bfrom\s+lxml\b/i],
+        },
+        {
+          name: "sqlalchemy",
+          patterns: [/\bimport\s+sqlalchemy\b/i, /\bfrom\s+sqlalchemy\b/i],
+        },
+        {
+          name: "openpyxl",
+          patterns: [/\bimport\s+openpyxl\b/i, /\bfrom\s+openpyxl\b/i],
+        },
+        {
+          name: "xlrd",
+          patterns: [/\bimport\s+xlrd\b/i, /\bfrom\s+xlrd\b/i],
         },
       ];
 
@@ -897,14 +1000,24 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       }
 
       try {
+        toast({
+          title: "Loading libraries...",
+          description: `Installing: ${Array.from(packagesToLoad).join(", ")}`,
+        });
+        
         await pyodide.loadPackage(Array.from(packagesToLoad));
         packagesToLoad.forEach((pkg) => pyodidePackagesLoaded.current.add(pkg));
+        
+        toast({
+          title: "Libraries loaded!",
+          description: "Ready to run your code.",
+        });
         return true;
       } catch (error) {
         console.error("Failed to load Pyodide packages:", error);
         toast({
-          title: "Python package unavailable",
-          description: "Required libraries could not be loaded. Please try again.",
+          title: "Package installation failed",
+          description: `Could not load: ${Array.from(packagesToLoad).join(", ")}. Some packages may not be available in the browser.`,
           variant: "destructive",
         });
         return false;
@@ -943,90 +1056,256 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
 
     try {
       if (language === "sql") {
-        if (!db) {
-          toast({
-            title: "Database not initialized",
-            description: "Please wait for the database to load.",
-            variant: "destructive",
+        // Try OneCompiler MySQL API first, fallback to SQLite
+        let usedOnlineMySQL = false;
+        
+        // Generate table setup SQL from question data for online MySQL
+        let setupSql = "";
+        if (questionTables.length > 0) {
+          questionTables.forEach((table) => {
+            const tableName = table.tableName;
+            const columns = table.columns;
+            const values = table.values;
+            
+            setupSql += `DROP TABLE IF EXISTS ${tableName};\n`;
+            const columnDefs = columns.map((col) => `\`${col}\` TEXT`).join(", ");
+            setupSql += `CREATE TABLE \`${tableName}\` (${columnDefs});\n`;
+            
+            if (values.length > 0) {
+              values.forEach((row) => {
+                const rowValues = row.map((val) => {
+                  if (val === null || val === undefined) return "NULL";
+                  const escaped = String(val).replace(/'/g, "''");
+                  return `'${escaped}'`;
+                }).join(", ");
+                setupSql += `INSERT INTO \`${tableName}\` (\`${columns.join("\`, \`")}\`) VALUES (${rowValues});\n`;
+              });
+            }
           });
-          setLoading(false);
-          return;
         }
 
-        // Split by semicolons to handle multiple queries
-        const queries = executableCode
-          .split(";")
-          .map((q) => q.trim())
-          .filter((q) => q.length > 0);
-
-        if (queries.length === 0) {
+        try {
           toast({
-            title: "No valid query",
-            description: "Please write a valid SQL query.",
-            variant: "destructive",
-          });
-          setLoading(false);
-          return;
-        }
-
-        let lastSelectOutput: { columns: string[]; values: any[][] } | null = null;
-
-        for (const originalQuery of queries) {
-          let query = originalQuery;
-
-          // Normalize table names in the current query to match created table names (case-insensitive)
-          const tableNames = availableTables;
-          tableNames.forEach((tableName) => {
-            const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const regex = new RegExp(`\\b${escapedTableName}\\b`, "gi");
-            query = query.replace(regex, `"${tableName}"`);
+            title: "Executing MySQL query...",
+            description: "Connecting to OneCompiler...",
           });
 
-          console.log("Executing SQL query:", query);
-          console.log("Available tables:", tableNames);
+          const fullSql = setupSql + "\n" + executableCode;
+          
+          // Use OneCompiler API for MySQL
+          const response = await fetch('https://onecompiler.com/api/v1/run?access_token=free', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              language: 'mysql',
+              stdin: '',
+              files: [{ name: 'main.sql', content: fullSql }],
+            }),
+          });
 
-          const isSelectQuery = isSelectLikeSql(query);
+          if (!response.ok) {
+            throw new Error(`OneCompiler returned ${response.status}`);
+          }
 
-          if (isSelectQuery) {
-            const resultSets = db.exec(query);
-            if (resultSets.length > 0) {
-              const finalResult = resultSets[resultSets.length - 1];
-              lastSelectOutput = {
-                columns: finalResult.columns,
-                values: finalResult.values,
-              };
+          const result = await response.json();
+          usedOnlineMySQL = true;
+
+          if (result.stderr || result.exception) {
+            const errorMsg = result.stderr || result.exception || "Unknown error";
+            setTextOutput(`MySQL Error:\n${errorMsg}\n\nAvailable tables: ${availableTables.join(", ") || "Check table setup"}`);
+            toast({
+              title: "MySQL Error",
+              description: "Check the output for details.",
+              variant: "destructive",
+            });
+          } else if (result.stdout) {
+            // Parse output into table format
+            const outputLines = result.stdout.split("\n").filter((line: string) => line.trim());
+            
+            if (outputLines.length > 0) {
+              const headerLine = outputLines[0];
+              const columns = headerLine.split(/\t/).map((c: string) => c.trim()).filter((c: string) => c);
+              
+              if (columns.length > 0 && outputLines.length > 1) {
+                const values = outputLines.slice(1)
+                  .map((line: string) => line.split(/\t/).map((c: string) => c.trim()))
+                  .filter((row: string[]) => row.length > 0 && row.some((cell: string) => cell));
+                
+                if (values.length > 0) {
+                  setOutput({ columns, values });
+                  toast({
+                    title: "MySQL query executed",
+                    description: `Returned ${values.length} row(s).`,
+                  });
+                } else {
+                  setTextOutput(result.stdout || "(Query executed - no results)");
+                  toast({ title: "Query executed" });
+                }
+              } else {
+                setTextOutput(result.stdout);
+                toast({ title: "Query executed" });
+              }
             } else {
-              lastSelectOutput = { columns: [], values: [] };
+              setTextOutput("(Query executed successfully - no output)");
+              toast({ title: "Query executed successfully" });
             }
           } else {
-            db.run(query);
+            setTextOutput("(Query executed successfully)");
+            toast({ title: "Query executed successfully" });
+          }
+        } catch (onlineError: any) {
+          // Fallback to SQLite
+          console.log("OneCompiler MySQL failed, using SQLite:", onlineError.message);
+          
+          if (!db) {
+            toast({
+              title: "SQL environment loading...",
+              description: "Please wait for the database to initialize.",
+              variant: "destructive",
+            });
+            setLoading(false);
+            return;
+          }
+
+          toast({
+            title: "Using SQLite (offline mode)",
+            description: "OneCompiler unavailable. Some MySQL syntax may differ.",
+          });
+
+          // Split by semicolons to handle multiple queries
+          const queries = executableCode
+            .split(";")
+            .map((q) => q.trim())
+            .filter((q) => q.length > 0);
+
+          if (queries.length === 0) {
+            toast({
+              title: "No valid query",
+              description: "Please write a valid SQL query.",
+              variant: "destructive",
+            });
+            setLoading(false);
+            return;
+          }
+
+          let lastSelectOutput: { columns: string[]; values: any[][] } | null = null;
+          const tableNames = availableTables;
+
+          for (const originalQuery of queries) {
+            let query = originalQuery;
+
+            tableNames.forEach((tableName) => {
+              const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+              const regex = new RegExp(`\\b${escapedTableName}\\b`, "gi");
+              query = query.replace(regex, `"${tableName}"`);
+            });
+
+            query = query.replace(/`/g, '"');
+
+            // Convert MySQL functions to SQLite equivalents
+            // MONTH(date) → CAST(strftime('%m', date) AS INTEGER)
+            query = query.replace(/\bMONTH\s*\(\s*([^)]+)\s*\)/gi, "CAST(strftime('%m', $1) AS INTEGER)");
+            // YEAR(date) → CAST(strftime('%Y', date) AS INTEGER)
+            query = query.replace(/\bYEAR\s*\(\s*([^)]+)\s*\)/gi, "CAST(strftime('%Y', $1) AS INTEGER)");
+            // DAY(date) → CAST(strftime('%d', date) AS INTEGER)
+            query = query.replace(/\bDAY\s*\(\s*([^)]+)\s*\)/gi, "CAST(strftime('%d', $1) AS INTEGER)");
+            // NOW() → datetime('now')
+            query = query.replace(/\bNOW\s*\(\s*\)/gi, "datetime('now')");
+            // CURDATE() → date('now')
+            query = query.replace(/\bCURDATE\s*\(\s*\)/gi, "date('now')");
+            // CURRENT_DATE() → date('now')
+            query = query.replace(/\bCURRENT_DATE\s*\(\s*\)/gi, "date('now')");
+            // CURRENT_TIMESTAMP() → datetime('now')
+            query = query.replace(/\bCURRENT_TIMESTAMP\s*\(\s*\)/gi, "datetime('now')");
+            // DATEDIFF(date1, date2) → CAST(julianday(date1) - julianday(date2) AS INTEGER)
+            query = query.replace(/\bDATEDIFF\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/gi, "CAST(julianday($1) - julianday($2) AS INTEGER)");
+            // DATE_ADD(date, INTERVAL n unit) - basic support
+            query = query.replace(/\bDATE_ADD\s*\(\s*([^,]+)\s*,\s*INTERVAL\s+(\d+)\s+DAY\s*\)/gi, "date($1, '+$2 days')");
+            query = query.replace(/\bDATE_ADD\s*\(\s*([^,]+)\s*,\s*INTERVAL\s+(\d+)\s+MONTH\s*\)/gi, "date($1, '+$2 months')");
+            query = query.replace(/\bDATE_ADD\s*\(\s*([^,]+)\s*,\s*INTERVAL\s+(\d+)\s+YEAR\s*\)/gi, "date($1, '+$2 years')");
+            // CONCAT(a, b, ...) → a || b || ...
+            query = query.replace(/\bCONCAT\s*\(([^)]+)\)/gi, (match, args) => {
+              const parts = args.split(',').map((p: string) => p.trim());
+              return `(${parts.join(' || ')})`;
+            });
+            // SUBSTRING(str, start, length) → SUBSTR(str, start, length)
+            query = query.replace(/\bSUBSTRING\s*\(/gi, "SUBSTR(");
+            // LOCATE(substr, str) → INSTR(str, substr) - note: args swapped
+            query = query.replace(/\bLOCATE\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)/gi, "INSTR($2, $1)");
+            // LCASE/UCASE → LOWER/UPPER
+            query = query.replace(/\bLCASE\s*\(/gi, "LOWER(");
+            query = query.replace(/\bUCASE\s*\(/gi, "UPPER(");
+
+            try {
+              const isSelectQuery = isSelectLikeSql(query);
+
+              if (isSelectQuery) {
+                const resultSets = db.exec(query);
+                if (resultSets.length > 0) {
+                  const finalResult = resultSets[resultSets.length - 1];
+                  lastSelectOutput = {
+                    columns: finalResult.columns,
+                    values: finalResult.values,
+                  };
+                } else {
+                  lastSelectOutput = { columns: [], values: [] };
+                }
+              } else {
+                db.run(query);
+              }
+            } catch (sqliteError: any) {
+              const errorMsg = sqliteError.message || String(sqliteError);
+              let helpfulMessage = errorMsg;
+              
+              if (errorMsg.includes("no such table")) {
+                const tableMatch = errorMsg.match(/no such table:\s*(\w+)/i);
+                const missingTable = tableMatch ? tableMatch[1] : "unknown";
+                helpfulMessage = `Table "${missingTable}" not found. Available: ${tableNames.join(", ") || "none"}`;
+              } else if (errorMsg.includes("no such column")) {
+                helpfulMessage = `Column not found. Check your column names.`;
+              } else if (errorMsg.includes("syntax error")) {
+                helpfulMessage = `SQL syntax error. This uses SQLite - some MySQL syntax may not work.`;
+              }
+              
+              setTextOutput(`SQL Error (SQLite): ${helpfulMessage}\n\nOriginal: ${errorMsg}\n\nTables: ${tableNames.join(", ") || "None"}`);
+              toast({
+                title: "SQL Error",
+                description: helpfulMessage.split("\n")[0],
+                variant: "destructive",
+              });
+              setLoading(false);
+              return;
+            }
+          }
+
+          if (lastSelectOutput) {
+            setOutput(lastSelectOutput);
+            setValidationResult(null);
+            toast({
+              title: "Query executed (SQLite)",
+              description: `Returned ${lastSelectOutput.values.length} row(s).`,
+            });
+          } else {
+            setOutput({ columns: ["Status"], values: [["Query executed successfully"]] });
+            toast({ title: "Query executed" });
           }
         }
-
-        if (lastSelectOutput) {
-          setOutput(lastSelectOutput);
-          setValidationResult(null);
-          toast({
-            title: "Query executed successfully",
-            description: `Returned ${lastSelectOutput.values.length} row(s).`,
-          });
-        } else {
-          setOutput({ columns: ["Status"], values: [["Query executed successfully"]] });
-          toast({
-            title: "Query executed successfully",
-            description: "The query has been executed.",
-          });
-        }
       } else if (language === "python") {
+        // Use Pyodide (in-browser Python with pandas, numpy)
         if (!pyodide) {
           toast({
-            title: "Python runtime not ready",
-            description: "Please wait for Python to load, then try again.",
+            title: "Python loading...",
+            description: "Please wait for Python to initialize.",
             variant: "destructive",
           });
           setLoading(false);
           return;
         }
+
+        toast({
+          title: "Executing Python...",
+          description: "Running code with pandas & numpy.",
+        });
 
         const packagesReady = await ensurePyodidePackages(executableCode);
         if (!packagesReady) {
@@ -1034,30 +1313,151 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           return;
         }
 
-        // Capture stdout
         let outputText = "";
+        let hasError = false;
+        
+        // Reset stdout/stderr capture
         pyodide.runPython(`
 import sys
 from io import StringIO
 sys.stdout = StringIO()
+sys.stderr = StringIO()
 `);
 
         try {
-          // Execute Python code (only executable code, comments removed)
+          // Always import pandas and numpy
+          pyodide.runPython(`import pandas as pd\nimport numpy as np`);
+          
+          // Pre-load table data as pandas DataFrames from question
+          if (questionTables.length > 0) {
+            console.log("Loading DataFrames:", questionTables.map(t => t.tableName));
+            
+            for (const table of questionTables) {
+              const tableName = table.tableName;
+              const columns = table.columns;
+              const values = table.values;
+              
+              // Build data dictionary for DataFrame
+              const dataDict: Record<string, any[]> = {};
+              columns.forEach((col, colIdx) => {
+                dataDict[col] = values.map(row => {
+                  const val = row[colIdx];
+                  if (val === null || val === undefined) return null;
+                  const numVal = Number(val);
+                  if (!isNaN(numVal) && String(val).trim() !== '') return numVal;
+                  return String(val);
+                });
+              });
+              
+              const jsonData = JSON.stringify(dataDict);
+              pyodide.runPython(`
+import json
+_temp_data = json.loads('''${jsonData.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}''')
+${tableName} = pd.DataFrame(_temp_data)
+del _temp_data
+`);
+              console.log(`Created DataFrame: ${tableName} with ${values.length} rows`);
+            }
+            
+            toast({
+              title: "DataFrames loaded",
+              description: `Available: ${questionTables.map(t => t.tableName).join(", ")}`,
+            });
+          } else if (sqlTableNames) {
+            // Create DataFrames from admin-provided table names
+            const tableNames = sqlTableNames.split(',').map(n => n.trim()).filter(n => n.length > 0);
+            if (tableNames.length > 0) {
+              console.log("Creating placeholder DataFrames:", tableNames);
+              for (const tableName of tableNames) {
+                pyodide.runPython(`${tableName} = pd.DataFrame()`);
+              }
+              toast({
+                title: "Note: Empty DataFrames",
+                description: `Created: ${tableNames.join(", ")}. Data from question not parsed.`,
+                variant: "destructive",
+              });
+            }
+          }
+
+          // Execute user's Python code
           pyodide.runPython(executableCode);
+          
+          // Get output
           outputText = pyodide.runPython("sys.stdout.getvalue()");
+          const stderrOutput = pyodide.runPython("sys.stderr.getvalue()");
+          
+          // If no stdout but code might return a value, try to get last expression
+          if (!outputText && !stderrOutput) {
+            // Try to capture the result of the last expression
+            try {
+              const lastLine = executableCode.trim().split('\n').pop() || '';
+              // If last line looks like an expression (not assignment, not print)
+              if (lastLine && !lastLine.includes('=') && !lastLine.startsWith('print') && !lastLine.startsWith('#')) {
+                const result = pyodide.runPython(`
+try:
+    _result = ${lastLine}
+    if _result is not None:
+        if hasattr(_result, 'to_string'):
+            print(_result.to_string())
+        else:
+            print(_result)
+except:
+    pass
+`);
+                outputText = pyodide.runPython("sys.stdout.getvalue()");
+              }
+            } catch (e) {
+              // Ignore - just means no expression result
+            }
+          }
+          
+          if (stderrOutput && !outputText) {
+            outputText = stderrOutput;
+          } else if (stderrOutput) {
+            outputText = `${outputText}\n\nWarnings:\n${stderrOutput}`;
+          }
+          
         } catch (error: any) {
-          outputText = `Error: ${error.message || String(error)}`;
+          hasError = true;
+          let errorMsg = error.message || String(error);
+          
+          // Provide helpful error messages
+          if (errorMsg.includes("ModuleNotFoundError") || errorMsg.includes("No module named")) {
+            const moduleMatch = errorMsg.match(/No module named ['"]([\w.-]+)['"]/);
+            const moduleName = moduleMatch ? moduleMatch[1] : "unknown";
+            errorMsg = `Module "${moduleName}" is not available.\n\nAvailable: pandas, numpy, scipy, matplotlib, seaborn, scikit-learn, statsmodels, sympy, networkx, pillow, beautifulsoup4, lxml, regex\n\nNote: requests, tensorflow, torch are NOT available in browser Python.`;
+          } else if (errorMsg.includes("NameError")) {
+            const availableDFs = questionTables.map(t => t.tableName).join(", ");
+            const adminDFs = sqlTableNames ? sqlTableNames.split(',').map(n => n.trim()).filter(n => n).join(", ") : "";
+            const allDFs = availableDFs || adminDFs;
+            errorMsg = `NameError: Variable or function not defined.\n\n${allDFs ? `Available DataFrames: ${allDFs}\n\n` : ""}${errorMsg}`;
+          } else if (errorMsg.includes("SyntaxError")) {
+            errorMsg = `SyntaxError: Check your Python syntax.\n\n${errorMsg}`;
+          } else if (errorMsg.includes("TypeError")) {
+            errorMsg = `TypeError: Wrong type used.\n\n${errorMsg}`;
+          } else if (errorMsg.includes("KeyError")) {
+            errorMsg = `KeyError: Column/key not found. Check column names.\n\n${errorMsg}`;
+          }
+          
+          outputText = `Error:\n${errorMsg}`;
         }
 
-        const finalOutput = outputText || "(No output)";
+        const finalOutput = outputText || "(No output - code ran but didn't print anything)";
         setTextOutput(finalOutput);
-        // Clear validation result when just running code
         setValidationResult(null);
-        toast({
-          title: "Code executed",
-          description: outputText ? "Check the output below." : "Code ran successfully with no output.",
-        });
+        
+        if (hasError) {
+          toast({
+            title: "Python Error",
+            description: "Check the output for details.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Code executed successfully",
+            description: "Check the output below.",
+          });
+        }
       } else if (language === "javascript") {
         // Execute JavaScript code
         try {
@@ -1529,7 +1929,7 @@ sys.stdout = StringIO()
           <DialogHeader>
             <DialogTitle className="flex items-center justify-center gap-2 text-2xl">
               <Trophy className="h-6 w-6 text-yellow-400" />
-              +25 XP
+              +{awardedXPAmount} XP
             </DialogTitle>
             <DialogDescription className="text-base">
               Question completed! Keep solving to climb the leaderboard.
@@ -1537,7 +1937,7 @@ sys.stdout = StringIO()
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              XP is awarded once per question. Check the leaderboard to see how you rank.
+              XP earned: Easy (10), Medium (20), Hard (25). Check the leaderboard to see how you rank.
             </p>
             <div className="flex justify-center gap-3">
               <Button variant="outline" onClick={() => setShowXpModal(false)}>
