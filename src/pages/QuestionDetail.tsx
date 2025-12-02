@@ -503,8 +503,6 @@ const QuestionDetail = () => {
     const fetchNextQuestion = async () => {
       try {
         const moduleTitle = question.title || "General";
-        console.log("Fetching next question for module:", moduleTitle, "Current question ID:", questionId);
-        
         let snapshot;
         try {
           // Try to fetch with orderBy first
@@ -550,23 +548,13 @@ const QuestionDetail = () => {
           }
           return b.id.localeCompare(a.id);
         });
-        
-        console.log("Total questions:", allQuestions.length);
-        console.log("Module questions found:", moduleQuestions.length);
-        console.log("Module questions:", moduleQuestions.map(q => ({ id: q.id, title: q.title, order: q.order })));
-        
+
         const currentIndex = moduleQuestions.findIndex(q => q.id === questionId);
-        console.log("Current question index:", currentIndex);
-        console.log("Total module questions:", moduleQuestions.length);
-        console.log("Current question ID:", questionId);
-        console.log("All module question IDs:", moduleQuestions.map(q => q.id));
-        
+
         if (currentIndex >= 0 && currentIndex < moduleQuestions.length - 1) {
           const nextId = moduleQuestions[currentIndex + 1].id;
-          console.log("Next question ID found:", nextId);
           setNextQuestionId(nextId);
         } else {
-          console.log("No next question - current index:", currentIndex, "total:", moduleQuestions.length);
           setNextQuestionId(null);
         }
       } catch (error) {
@@ -746,12 +734,9 @@ const QuestionDetail = () => {
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log("Next Question button clicked, nextQuestionId:", nextQuestionId);
                   if (nextQuestionId) {
-                    console.log("Navigating to next question:", nextQuestionId);
                     navigate(`/interview-prep/question/${nextQuestionId}`);
                   } else {
-                    console.log("Next question ID is null, cannot navigate");
                     toast({
                       title: "No Next Question",
                       description: "This is the last question in this module.",

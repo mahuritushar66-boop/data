@@ -126,17 +126,10 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
     }
   });
 
-  console.log("Extracted mentioned tables from question:", mentionedTables);
-  console.log("Question text sample:", questionText?.substring(0, 300));
-
   while ((match = regex.exec(questionText)) !== null) {
     try {
       const parsed = JSON.parse(match[0]);
       if (!Array.isArray(parsed.columns) || !Array.isArray(parsed.values)) continue;
-      
-      console.log("JSON table found, current tables.length:", tables.length);
-      console.log("Admin-provided table names:", adminTableNamesList);
-      console.log("Mentioned tables:", mentionedTables);
       
       // Priority: 1. Admin-provided names (ALWAYS use if provided), 2. JSON table name, 3. Mentioned tables, 4. Fallback
       let rawName: string | undefined;
@@ -146,7 +139,6 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
         // Use the corresponding admin name for this table index, or the first one if we have more tables than names
         const adminNameIndex = Math.min(tables.length, adminTableNamesList.length - 1);
         rawName = adminTableNamesList[adminNameIndex];
-        console.log("Using admin-provided table name (priority 1):", rawName, "for table index:", tables.length);
       } else {
         // Second priority: Try to get table name from JSON
         rawName =
@@ -156,15 +148,13 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
           (typeof parsed.table === "string" && parsed.table.trim());
         
         if (rawName) {
-          console.log("Using table name from JSON (priority 2):", rawName);
+          // table name from JSON
         } else if (mentionedTables.length > 0) {
           // Third priority: Use mentioned tables from question text
           rawName = mentionedTables[Math.min(tables.length, mentionedTables.length - 1)];
-          console.log("Using mentioned table name (priority 3):", rawName);
         } else {
           // Fourth priority: Fallback to generic name
           rawName = `dataset_${tables.length + 1}`;
-          console.log("Using fallback table name (priority 4):", rawName);
         }
       }
       
@@ -255,9 +245,9 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         const tableName = firstTableName || "customers";
         return `${instruction}\nSELECT * FROM ${tableName} LIMIT 5;`;
       case "javascript":
-        return `${instruction}\nconsole.log('Hello, World!');`;
+        return `${instruction}\n// console.log('Hello, World!');`;
       case "typescript":
-        return `${instruction}\nconsole.log('Hello, World!');`;
+        return `${instruction}\n// console.log('Hello, World!');`;
       case "java":
         return `${instruction}\npublic class Solution {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`;
       case "cpp":
@@ -275,9 +265,6 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
 
   const questionTables = useMemo(() => {
     const tables = extractSqlTablesFromQuestion(question, sqlTableNames);
-    console.log("Extracted SQL tables from question:", tables);
-    console.log("Question text:", question?.substring(0, 500)); // Log first 500 chars
-    console.log("Admin-provided table names:", sqlTableNames);
     return tables;
   }, [question, sqlTableNames]);
 
@@ -295,13 +282,11 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     if ((language === "sql" || language === "python") && questionTables.length > 0) {
       // Use the actual table name from the parsed tables (this uses the correct priority)
       firstTableName = questionTables[0].tableName;
-      console.log("Using table name from questionTables for starter code:", firstTableName);
     } else if ((language === "sql" || language === "python") && sqlTableNames) {
       // Fallback: try to extract first table name from admin-provided names
         const names = sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0);
       if (names.length > 0) {
         firstTableName = names[0];
-        console.log("Using admin-provided table name for starter code:", firstTableName);
       }
     } else if (language === "sql" && question) {
       // SQL-specific fallback: try to extract from question text
@@ -341,7 +326,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
 
   // Debug: Log when modal state changes
   useEffect(() => {
-    console.log("showXpModal state changed:", showXpModal);
+    // track modal visibility internally if needed
   }, [showXpModal]);
 
   // Reset hasAwardedXP when questionId changes
@@ -366,12 +351,10 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   // Function to track question completion and award XP
   const trackQuestionCompletion = async (questionId: string) => {
     if (!currentUser || !questionId) {
-      console.log("trackQuestionCompletion: Missing user or questionId", { currentUser: !!currentUser, questionId });
       return false;
     }
 
     if (hasAwardedXP) {
-      console.log("trackQuestionCompletion: XP already awarded for this session");
       return false;
     }
 
@@ -381,7 +364,6 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       const submissionSnap = await getDoc(submissionRef);
 
       if (submissionSnap.exists() && submissionSnap.data().status === "completed") {
-        console.log("trackQuestionCompletion: Question already completed previously");
         return false; // Already completed
       }
 
@@ -425,7 +407,6 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
 
       setAwardedXPAmount(xpAmount);
       setHasAwardedXP(true);
-      console.log("trackQuestionCompletion: XP awarded successfully, returning true");
       // Don't show toast here, let the modal handle it
       return true;
     } catch (error: any) {
@@ -755,8 +736,6 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         insertStmt.free();
       });
 
-      // Log created tables for debugging
-      console.log("Created SQL tables:", names);
       setAvailableTables(names);
     };
 
@@ -1155,8 +1134,6 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           }
         } catch (onlineError: any) {
           // Fallback to SQLite
-          console.log("OneCompiler MySQL failed, using SQLite:", onlineError.message);
-          
           if (!db) {
             toast({
               title: "SQL environment loading...",
@@ -1330,8 +1307,6 @@ sys.stderr = StringIO()
           
           // Pre-load table data as pandas DataFrames from question
           if (questionTables.length > 0) {
-            console.log("Loading DataFrames:", questionTables.map(t => t.tableName));
-            
             for (const table of questionTables) {
               const tableName = table.tableName;
               const columns = table.columns;
@@ -1356,7 +1331,6 @@ _temp_data = json.loads('''${jsonData.replace(/\\/g, '\\\\').replace(/'/g, "\\'"
 ${tableName} = pd.DataFrame(_temp_data)
 del _temp_data
 `);
-              console.log(`Created DataFrame: ${tableName} with ${values.length} rows`);
             }
             
             toast({
@@ -1367,7 +1341,6 @@ del _temp_data
             // Create DataFrames from admin-provided table names
             const tableNames = sqlTableNames.split(',').map(n => n.trim()).filter(n => n.length > 0);
             if (tableNames.length > 0) {
-              console.log("Creating placeholder DataFrames:", tableNames);
               for (const tableName of tableNames) {
                 pyodide.runPython(`${tableName} = pd.DataFrame()`);
               }

@@ -203,7 +203,6 @@ const InterviewModule = () => {
   useEffect(() => {
     // Fetch theory questions for non-code modules
     const isNonCode = isNonCodeModule(moduleTitle);
-    console.log("Module:", moduleTitle, "Is non-code module:", isNonCode);
     
     if (!isNonCode) return;
 
@@ -211,12 +210,9 @@ const InterviewModule = () => {
     const unsubscribe = onSnapshot(
       theoryQuery,
       (snapshot) => {
-        console.log("Theory questions fetched:", snapshot.docs.length);
-        
         const theoryFiltered = snapshot.docs
           .map((docSnap) => {
             const data = docSnap.data();
-            console.log("Theory question data:", { id: docSnap.id, module: data.module, question: data.question?.substring(0, 50) });
             return {
               id: docSnap.id,
               question: data.question || "",
@@ -242,17 +238,13 @@ const InterviewModule = () => {
             const pageIncludesItem = pageModule.includes(itemModule);
             
             const matches = exactMatch || itemIncludesPage || pageIncludesItem;
-            console.log(`Filter check: "${itemModule}" vs "${pageModule}" = ${matches}`);
             return matches;
           });
-
-        console.log("Theory questions after filter:", theoryFiltered.length);
 
         // Merge with existing questions (replace theory questions, keep regular questions)
         setQuestions((prev) => {
           const nonTheory = prev.filter(q => !q.isTheory);
           const merged = [...nonTheory, ...theoryFiltered];
-          console.log("Total questions after merge:", merged.length);
           return merged;
         });
       },
