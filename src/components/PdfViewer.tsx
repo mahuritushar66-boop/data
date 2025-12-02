@@ -5,9 +5,10 @@ import { Download, FileText, ExternalLink, Eye, RefreshCw } from "lucide-react";
 interface PdfViewerProps {
   url: string;
   title?: string;
+  height?: string;
 }
 
-const PdfViewer = ({ url, title }: PdfViewerProps) => {
+const PdfViewer = ({ url, title, height = "600px" }: PdfViewerProps) => {
   const [viewMode, setViewMode] = useState<"google" | "direct" | "none">("google");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -103,7 +104,8 @@ const PdfViewer = ({ url, title }: PdfViewerProps) => {
           )}
           <iframe
             src={viewMode === "google" ? googleViewerUrl : url}
-            className="w-full h-[600px] border-0"
+            className="w-full border-0"
+            style={{ height }}
             title={title || "PDF Document"}
             onLoad={() => setIsLoading(false)}
             onError={() => {

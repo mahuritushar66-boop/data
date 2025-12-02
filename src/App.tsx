@@ -41,7 +41,7 @@ const AppContent = () => {
   
   // Hide navbar padding on question pages (they have their own custom header)
   const isQuestionPage = location.pathname.startsWith("/interview-prep/question") && !location.pathname.includes("/hint");
-  const mainPaddingTop = isQuestionPage ? "pt-0" : "pt-16";
+  const mainPaddingTop = isQuestionPage ? "pt-0" : "pt-12";
   
   return (
     <div className="flex flex-col min-h-screen">

@@ -129,14 +129,66 @@ const parseTableJSON = (text: string): { columns?: string[]; values?: any[][] } 
 };
 
 // Helper function to render question content with JSON table detection
-const renderQuestionContent = (questionText: string) => {
+const renderQuestionContent = (questionText: string, sqlTableNames?: string) => {
+  // Parse admin-provided table names (comma-separated)
+  const adminTableNamesList: string[] = sqlTableNames
+    ? sqlTableNames.split(',').map(name => name.trim().toLowerCase()).filter(name => name.length > 0)
+    : [];
+
+  // Try to extract table names mentioned in the question text
+  // Order matters: more specific patterns first to avoid false matches
+  const tableNamePatterns = [
+    /(?:FROM|from)\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+    /SQL\s+table[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+    /(?:table|Table|TABLE)[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+    /using\s+the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+    /the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+    // More specific pattern: word before "table" but not "the"
+    /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+table\b/gi,
+  ];
+  const mentionedTables: string[] = [];
+  tableNamePatterns.forEach(pattern => {
+    pattern.lastIndex = 0;
+    let m;
+    while ((m = pattern.exec(questionText)) !== null) {
+      if (m[1]) {
+        const tableName = m[1].toLowerCase();
+        // Skip common SQL keywords, articles, and generic words
+        const skipWords = ['select', 'where', 'group', 'order', 'having', 'limit', 'join', 'inner', 'left', 'right', 'outer', 'on', 'as', 'and', 'or', 'not', 'in', 'exists', 'like', 'between', 'the', 'a', 'an', 'this', 'that', 'below', 'above'];
+        if (!skipWords.includes(tableName) && !mentionedTables.includes(tableName)) {
+          mentionedTables.push(tableName);
+        }
+      }
+    }
+  });
+
   let tableCounter = 0;
-  const resolveTableName = (data?: Record<string, any>) => {
-    const raw =
-      (typeof data?.tableName === "string" && data.tableName.trim()) ||
-      (typeof data?.name === "string" && data.name.trim());
-    const fallback = `dataset_${tableCounter + 1}`;
-    const sqlName = sanitizeSqlIdentifier(raw || fallback, fallback);
+  const resolveTableName = (data?: Record<string, any>, tableIndex: number = 0) => {
+    let rawName: string | undefined;
+    
+    // Priority: 1. Admin-provided names (ALWAYS use if provided), 2. JSON table name, 3. Mentioned tables, 4. Fallback
+    if (adminTableNamesList.length > 0) {
+      // Use the corresponding admin name for this table index
+      const adminNameIndex = Math.min(tableIndex, adminTableNamesList.length - 1);
+      rawName = adminTableNamesList[adminNameIndex];
+    } else {
+      // Second priority: Try to get table name from JSON
+      rawName =
+        (typeof data?.tableName === "string" && data.tableName.trim()) ||
+        (typeof data?.name === "string" && data.name.trim());
+      
+      if (!rawName && mentionedTables.length > 0) {
+        // Third priority: Use mentioned tables from question text
+        rawName = mentionedTables[Math.min(tableIndex, mentionedTables.length - 1)];
+      }
+      
+      if (!rawName) {
+        // Fourth priority: Fallback to generic name
+        rawName = `dataset_${tableCounter + 1}`;
+      }
+    }
+    
+    const sqlName = sanitizeSqlIdentifier(rawName.toLowerCase(), `dataset_${tableCounter + 1}`);
     tableCounter += 1;
     return sqlName;
   };
@@ -144,7 +196,7 @@ const renderQuestionContent = (questionText: string) => {
   // First, try to parse the entire question as JSON
   const tableData = parseTableJSON(questionText);
   if (tableData) {
-    const sqlName = resolveTableName(tableData);
+    const sqlName = resolveTableName(tableData, 0);
     // Entire question is a JSON table
     return (
       <div className="rounded-md bg-background/60 border border-border/50 overflow-hidden">
@@ -228,7 +280,9 @@ const renderQuestionContent = (questionText: string) => {
         {parts.map((part, idx) => {
           if (part.type === 'table') {
             const tableData = part.content as { columns?: string[]; values?: any[][] };
-            const sqlName = resolveTableName(tableData);
+            // Find the index of this table in the jsonBlocks array
+            const tableIndex = jsonBlocks.findIndex(block => block.data === tableData);
+            const sqlName = resolveTableName(tableData, tableIndex >= 0 ? tableIndex : idx);
             return (
               <div key={idx} className="rounded-md bg-background/60 border border-border/50 overflow-hidden">
                 <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border/50 bg-muted/30 flex items-center gap-2">
@@ -532,7 +586,7 @@ const QuestionDetail = () => {
           const qTitle = q.title || "General";
           return qTitle === moduleTitle || qTitle === (moduleTitle || "General");
         });
-
+        
         // Sort by order if available, otherwise by createdAt (newest first)
         moduleQuestions.sort((a, b) => {
           // If both have order, sort by order (ascending)
@@ -548,9 +602,9 @@ const QuestionDetail = () => {
           }
           return b.id.localeCompare(a.id);
         });
-
+        
         const currentIndex = moduleQuestions.findIndex(q => q.id === questionId);
-
+        
         if (currentIndex >= 0 && currentIndex < moduleQuestions.length - 1) {
           const nextId = moduleQuestions[currentIndex + 1].id;
           setNextQuestionId(nextId);
@@ -840,7 +894,7 @@ const QuestionDetail = () => {
             <div className="flex-1 overflow-y-auto custom-scrollbar px-4 lg:px-6 py-4 min-h-0">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsContent value="question" className="mt-0">
-                  {renderQuestionContent(question.question)}
+                  {renderQuestionContent(question.question, question.sqlTableNames)}
                 </TabsContent>
 
                 <TabsContent value="hint" className="mt-0">

@@ -101,13 +101,15 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
     : [];
 
   // Try to extract table names mentioned in the question text (e.g., "FROM customers", "table: customers", "customers table")
+  // Order matters: more specific patterns first to avoid false matches
   const tableNamePatterns = [
     /(?:FROM|from)\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
-    /(?:table|Table|TABLE)[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
-    /([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
     /SQL\s+table[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+    /(?:table|Table|TABLE)[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
     /using\s+the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
     /the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+    // More specific pattern: word before "table" but not "the"
+    /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+table\b/gi,
   ];
   const mentionedTables: string[] = [];
   tableNamePatterns.forEach(pattern => {
@@ -117,8 +119,8 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
     while ((m = pattern.exec(questionText)) !== null) {
       if (m[1]) {
         const tableName = m[1].toLowerCase();
-        // Skip common SQL keywords and generic words
-        const skipWords = ['select', 'where', 'group', 'order', 'having', 'limit', 'join', 'inner', 'left', 'right', 'outer', 'on', 'as', 'and', 'or', 'not', 'in', 'exists', 'like', 'between'];
+        // Skip common SQL keywords, articles, and generic words
+        const skipWords = ['select', 'where', 'group', 'order', 'having', 'limit', 'join', 'inner', 'left', 'right', 'outer', 'on', 'as', 'and', 'or', 'not', 'in', 'exists', 'like', 'between', 'the', 'a', 'an', 'this', 'that', 'below', 'above'];
         if (!skipWords.includes(tableName) && !mentionedTables.includes(tableName)) {
           mentionedTables.push(tableName);
         }
@@ -499,6 +501,53 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             passed: false, 
             message: "Your output is not matching the expected Output" 
           };
+        }
+      } else if (language === "python" && actualOutput && typeof actualOutput === "object" && "columns" in actualOutput) {
+        // For Python with structured output (DataFrame converted to JSON format)
+        // Expected output should be a JSON string
+        try {
+          const expected = JSON.parse(expectedOutput);
+          
+          // Compare columns
+          const actualCols = actualOutput.columns.map(c => c.toLowerCase().trim());
+          const expectedCols = expected.columns?.map((c: string) => c.toLowerCase().trim()) || [];
+          
+          if (actualCols.length !== expectedCols.length) {
+            return { 
+              passed: false, 
+              message: "Your output is not matching the expected Output" 
+            };
+          }
+
+          // Compare values (normalize for comparison)
+          const actualValues = actualOutput.values.map(row => 
+            row.map(cell => String(cell).toLowerCase().trim())
+          ).sort();
+          const expectedValues = (expected.values || []).map((row: any[]) => 
+            row.map((cell: any) => String(cell).toLowerCase().trim())
+          ).sort();
+
+          if (actualValues.length !== expectedValues.length) {
+            return { 
+              passed: false, 
+              message: "Your output is not matching the expected Output" 
+            };
+          }
+
+          // Deep comparison of values
+          const actualStr = JSON.stringify(actualValues);
+          const expectedStr = JSON.stringify(expectedValues);
+          
+          if (actualStr === expectedStr) {
+            return { passed: true, message: "Output matches expected result! ✓" };
+          } else {
+            return { 
+              passed: false, 
+              message: "Your output is not matching the expected Output" 
+            };
+          }
+        } catch (e) {
+          // If expected output is not JSON, fall through to text comparison
         }
       } else if (typeof actualOutput === "string" || textOutput) {
         // For text-based outputs (Python, JavaScript, etc.)
@@ -1066,23 +1115,38 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
         try {
           toast({
             title: "Executing MySQL query...",
-            description: "Connecting to OneCompiler...",
+            description: "Trying OneCompiler, will use SQLite if unavailable...",
           });
 
           const fullSql = setupSql + "\n" + executableCode;
           
           // Use OneCompiler API for MySQL
-          const response = await fetch('https://onecompiler.com/api/v1/run?access_token=free', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              language: 'mysql',
-              stdin: '',
-              files: [{ name: 'main.sql', content: fullSql }],
-            }),
-          });
+          let response: Response;
+          try {
+            response = await fetch('https://onecompiler.com/api/v1/run?access_token=free', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              mode: 'cors',
+              body: JSON.stringify({
+                language: 'mysql',
+                stdin: '',
+                files: [{ name: 'main.sql', content: fullSql }],
+              }),
+            });
+          } catch (fetchError: any) {
+            // OneCompiler is blocked by CORS - same issue as Python
+            // Silently fallback to SQLite (no need to show error, SQLite works fine)
+            throw new Error("FALLBACK_TO_SQLITE");
+          }
 
           if (!response.ok) {
+            // If OneCompiler returns error, fallback to SQLite
+            if (response.status >= 500 || response.status === 0) {
+              throw new Error("FALLBACK_TO_SQLITE");
+            }
             throw new Error(`OneCompiler returned ${response.status}`);
           }
 
@@ -1133,7 +1197,9 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             toast({ title: "Query executed successfully" });
           }
         } catch (onlineError: any) {
-          // Fallback to SQLite
+          // Fallback to SQLite (either CORS blocked or OneCompiler error)
+          const isCorsFallback = onlineError.message === "FALLBACK_TO_SQLITE";
+          
           if (!db) {
             toast({
               title: "SQL environment loading...",
@@ -1144,10 +1210,17 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             return;
           }
 
-          toast({
-            title: "Using SQLite (offline mode)",
-            description: "OneCompiler unavailable. Some MySQL syntax may differ.",
-          });
+          if (isCorsFallback) {
+            toast({
+              title: "Using SQLite (offline mode)",
+              description: "OneCompiler blocked by CORS. SQLite works offline - some MySQL syntax may differ.",
+            });
+          } else {
+            toast({
+              title: "Using SQLite (offline mode)",
+              description: "OneCompiler unavailable. Some MySQL syntax may differ.",
+            });
+          }
 
           // Split by semicolons to handle multiple queries
           const queries = executableCode
@@ -1268,47 +1341,41 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           }
         }
       } else if (language === "python") {
-        // Use Pyodide (in-browser Python with pandas, numpy)
-        if (!pyodide) {
-          toast({
-            title: "Python loading...",
-            description: "Please wait for Python to initialize.",
-            variant: "destructive",
-          });
-          setLoading(false);
-          return;
-        }
-
+        // Try OneCompiler first, but it may be blocked by CORS
+        // If blocked, automatically fallback to Pyodide (in-browser Python)
         toast({
           title: "Executing Python...",
-          description: "Running code with pandas & numpy.",
+          description: "Trying OneCompiler, will use in-browser Python if unavailable...",
         });
 
-        const packagesReady = await ensurePyodidePackages(executableCode);
-        if (!packagesReady) {
-          setLoading(false);
-          return;
-        }
-
-        let outputText = "";
-        let hasError = false;
-        
-        // Reset stdout/stderr capture
-        pyodide.runPython(`
-import sys
-from io import StringIO
-sys.stdout = StringIO()
-sys.stderr = StringIO()
-`);
-
         try {
-          // Always import pandas and numpy
-          pyodide.runPython(`import pandas as pd\nimport numpy as np`);
-          
+          // Build Python code with imports and table setup
+          let pythonCode = `# Import all commonly used libraries
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn import *
+import scipy
+import statsmodels.api as sm
+import json
+
+`;
+
+          // Parse admin-provided table names (comma-separated) - ALWAYS prioritize these
+          const adminTableNamesList: string[] = sqlTableNames
+            ? sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0)
+            : [];
+
           // Pre-load table data as pandas DataFrames from question
           if (questionTables.length > 0) {
-            for (const table of questionTables) {
-              const tableName = table.tableName;
+            for (let i = 0; i < questionTables.length; i++) {
+              const table = questionTables[i];
+              // Use admin-provided name if available, otherwise use parsed name
+              const tableName = adminTableNamesList.length > 0 
+                ? adminTableNamesList[Math.min(i, adminTableNamesList.length - 1)]
+                : table.tableName;
+              
               const columns = table.columns;
               const values = table.values;
               
@@ -1318,55 +1385,364 @@ sys.stderr = StringIO()
                 dataDict[col] = values.map(row => {
                   const val = row[colIdx];
                   if (val === null || val === undefined) return null;
+                  // Try to convert to number if possible
                   const numVal = Number(val);
-                  if (!isNaN(numVal) && String(val).trim() !== '') return numVal;
+                  if (!isNaN(numVal) && String(val).trim() !== '') {
+                    return numVal;
+                  }
                   return String(val);
                 });
               });
               
-              const jsonData = JSON.stringify(dataDict);
+              const jsonData = JSON.stringify(dataDict).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+              pythonCode += `
+# Load ${tableName} DataFrame
+import json
+_temp_data = json.loads('''${jsonData}''')
+${tableName} = pd.DataFrame(_temp_data)
+del _temp_data
+`;
+            }
+            
+            const finalTableNames = questionTables.map((table, i) => 
+              adminTableNamesList.length > 0 
+                ? adminTableNamesList[Math.min(i, adminTableNamesList.length - 1)]
+                : table.tableName
+            );
+            
+            toast({
+              title: "DataFrames loaded",
+              description: `Available: ${finalTableNames.join(", ")}`,
+            });
+          } else if (adminTableNamesList.length > 0) {
+            // Create empty DataFrames from admin-provided table names
+            for (const tableName of adminTableNamesList) {
+              pythonCode += `\n# Create empty DataFrame: ${tableName}\n${tableName} = pd.DataFrame()\n`;
+            }
+            toast({
+              title: "Note: Empty DataFrames",
+              description: `Created: ${adminTableNamesList.join(", ")}. Data from question not parsed.`,
+              variant: "destructive",
+            });
+          }
+
+          // Add user's code
+          pythonCode += `\n# User's code\n${executableCode}\n`;
+
+          // Try to capture last expression result if no output
+          const lastLine = executableCode.trim().split('\n').pop() || '';
+          const isExpression = lastLine && 
+            !lastLine.includes('=') && 
+            !lastLine.startsWith('print') && 
+            !lastLine.startsWith('#') && 
+            !lastLine.startsWith('import') && 
+            !lastLine.startsWith('from') &&
+            !lastLine.startsWith('if') &&
+            !lastLine.startsWith('for') &&
+            !lastLine.startsWith('while') &&
+            !lastLine.startsWith('def') &&
+            !lastLine.startsWith('class') &&
+            lastLine.trim().length > 0;
+          
+          // Check if expected output is JSON format (for DataFrame comparison)
+          let expectsJsonOutput = false;
+          try {
+            if (expectedOutput) {
+              const parsed = JSON.parse(expectedOutput);
+              if (parsed && typeof parsed === 'object' && Array.isArray(parsed.columns) && Array.isArray(parsed.values)) {
+                expectsJsonOutput = true;
+              }
+            }
+          } catch {
+            // Not JSON format
+          }
+          
+          if (isExpression) {
+            if (expectsJsonOutput) {
+              // For JSON expected output, try to get DataFrame as JSON
+              pythonCode += `
+# Capture last expression result as JSON (for DataFrame comparison)
+import json
+try:
+    _last_result = ${lastLine}
+    if _last_result is not None:
+        if hasattr(_last_result, 'to_dict'):
+            # DataFrame - convert to JSON format
+            _df_dict = _last_result.to_dict('records')
+            _df_json = json.dumps({"columns": list(_last_result.columns), "values": [[str(v) for v in row.values()] for row in _df_dict]}, indent=2)
+            print("__PYTHON_DF_JSON__")
+            print(_df_json)
+        elif hasattr(_last_result, 'to_string'):
+            print(_last_result.to_string())
+        elif hasattr(_last_result, '__str__'):
+            print(str(_last_result))
+        else:
+            print(_last_result)
+except:
+    pass
+`;
+            } else {
+              // Regular text output
+              pythonCode += `
+# Capture last expression result
+try:
+    _last_result = ${lastLine}
+    if _last_result is not None:
+        if hasattr(_last_result, 'to_string'):
+            print(_last_result.to_string())
+        elif hasattr(_last_result, '__str__'):
+            print(str(_last_result))
+        else:
+            print(_last_result)
+except:
+    pass
+`;
+            }
+          }
+
+
+          // Use OneCompiler API for Python
+          let response: Response;
+          try {
+            response = await fetch('https://onecompiler.com/api/v1/run?access_token=free', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              mode: 'cors',
+              body: JSON.stringify({
+                language: 'python3',
+                stdin: '',
+                files: [{ name: 'main.py', content: pythonCode }],
+              }),
+            });
+          } catch (fetchError: any) {
+            // OneCompiler is blocked by CORS (Cross-Origin Resource Sharing)
+            // This is a browser security feature - OneCompiler's API doesn't allow requests from other domains
+            // Automatically fallback to Pyodide (in-browser Python)
+            if (pyodide) {
+              toast({
+                title: "OneCompiler blocked (CORS)",
+                description: "Using in-browser Python (Pyodide) instead. This is normal and works offline!",
+              });
+              throw new Error("FALLBACK_TO_PYODIDE");
+            } else {
+              // If Pyodide isn't loaded yet, provide helpful error message
+              throw new Error(`OneCompiler is blocked by browser CORS policy.\n\nThis is a security restriction - OneCompiler's API doesn't allow requests from other websites.\n\nPlease wait for Pyodide to load, or refresh the page.\n\nOriginal error: ${fetchError.message || "CORS blocked"}`);
+            }
+          }
+
+          if (!response.ok) {
+            // If OneCompiler returns error, try Pyodide fallback
+            if (pyodide && response.status >= 500) {
+              toast({
+                title: "OneCompiler error",
+                description: "Falling back to in-browser Python (Pyodide).",
+              });
+              throw new Error("FALLBACK_TO_PYODIDE");
+            }
+            throw new Error(`OneCompiler returned ${response.status}`);
+          }
+
+          const result = await response.json();
+          let outputText = "";
+          let hasError = false;
+          let structuredOutput: { columns: string[]; values: any[][] } | null = null;
+
+          if (result.stderr || result.exception) {
+            hasError = true;
+            const errorMsg = result.stderr || result.exception || "Unknown error";
+            
+            // Provide helpful error messages
+            let formattedError = errorMsg;
+            if (errorMsg.includes("ModuleNotFoundError") || errorMsg.includes("No module named")) {
+              const moduleMatch = errorMsg.match(/No module named ['"]([\w.-]+)['"]/);
+              const moduleName = moduleMatch ? moduleMatch[1] : "unknown";
+              formattedError = `Module "${moduleName}" is not available.\n\nAvailable libraries: pandas, numpy, matplotlib, seaborn, scikit-learn, scipy, statsmodels, sympy, networkx, pillow, beautifulsoup4, lxml, regex, requests, and more.\n\nOriginal error:\n${errorMsg}`;
+            } else if (errorMsg.includes("NameError")) {
+              // Use admin-provided names if available, otherwise use parsed names
+              const adminTableNamesList: string[] = sqlTableNames
+                ? sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0)
+                : [];
+              const availableDFs = adminTableNamesList.length > 0
+                ? adminTableNamesList.join(", ")
+                : questionTables.map(t => t.tableName).join(", ");
+              const allDFs = availableDFs || (sqlTableNames ? sqlTableNames.split(',').map(n => n.trim()).filter(n => n).join(", ") : "");
+              formattedError = `NameError: Variable or function not defined.\n\n${allDFs ? `Available DataFrames: ${allDFs}\n\n` : ""}${errorMsg}`;
+            } else if (errorMsg.includes("SyntaxError")) {
+              formattedError = `SyntaxError: Check your Python syntax.\n\n${errorMsg}`;
+            } else if (errorMsg.includes("TypeError")) {
+              formattedError = `TypeError: Wrong type used.\n\n${errorMsg}`;
+            } else if (errorMsg.includes("KeyError")) {
+              formattedError = `KeyError: Column/key not found. Check column names.\n\n${errorMsg}`;
+            }
+            
+            outputText = `Error:\n${formattedError}`;
+          } else if (result.stdout) {
+            outputText = result.stdout.trim();
+            
+            // Check if output contains DataFrame JSON format
+            if (outputText.includes("__PYTHON_DF_JSON__")) {
+              try {
+                const jsonMatch = outputText.match(/__PYTHON_DF_JSON__\s*(\{[\s\S]*\})/);
+                if (jsonMatch && jsonMatch[1]) {
+                  const dfJson = JSON.parse(jsonMatch[1]);
+                  if (dfJson.columns && dfJson.values) {
+                    structuredOutput = {
+                      columns: dfJson.columns,
+                      values: dfJson.values
+                    };
+                    // Keep text output for display but also set structured output
+                    outputText = outputText.replace(/__PYTHON_DF_JSON__\s*\{[\s\S]*\}/, '').trim() || outputText;
+                  }
+                }
+              } catch (e) {
+                // If JSON parsing fails, just use text output
+              }
+            }
+            
+            if (!outputText) {
+              outputText = "(No output - code ran but didn't print anything)";
+            }
+          } else {
+            outputText = "(Code executed successfully - no output)";
+          }
+
+          setTextOutput(outputText);
+          setOutput(structuredOutput);
+          setValidationResult(null);
+          
+          if (hasError) {
+            toast({
+              title: "Python Error",
+              description: "Check the output for details.",
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Code executed successfully",
+              description: "Check the output below.",
+            });
+          }
+        } catch (error: any) {
+          let errorMsg = error.message || String(error);
+          
+          // Fallback to Pyodide if OneCompiler fails
+          if (errorMsg === "FALLBACK_TO_PYODIDE" && pyodide) {
+            try {
+              // Use Pyodide as fallback
+              const packagesReady = await ensurePyodidePackages(executableCode);
+              if (!packagesReady) {
+                setLoading(false);
+                return;
+              }
+
+              let outputText = "";
+              let hasError = false;
+              
+              // Reset stdout/stderr capture
               pyodide.runPython(`
+import sys
+from io import StringIO
+sys.stdout = StringIO()
+sys.stderr = StringIO()
+`);
+
+              try {
+                // Always import pandas and numpy
+                pyodide.runPython(`import pandas as pd\nimport numpy as np`);
+                
+                // Parse admin-provided table names (comma-separated) - ALWAYS prioritize these
+                const adminTableNamesList: string[] = sqlTableNames
+                  ? sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0)
+                  : [];
+                
+                // Pre-load table data as pandas DataFrames from question
+                if (questionTables.length > 0) {
+                  for (let i = 0; i < questionTables.length; i++) {
+                    const table = questionTables[i];
+                    // Use admin-provided name if available, otherwise use parsed name
+                    const tableName = adminTableNamesList.length > 0 
+                      ? adminTableNamesList[Math.min(i, adminTableNamesList.length - 1)]
+                      : table.tableName;
+                    
+                    const columns = table.columns;
+                    const values = table.values;
+                    
+                    // Build data dictionary for DataFrame
+                    const dataDict: Record<string, any[]> = {};
+                    columns.forEach((col, colIdx) => {
+                      dataDict[col] = values.map(row => {
+                        const val = row[colIdx];
+                        if (val === null || val === undefined) return null;
+                        const numVal = Number(val);
+                        if (!isNaN(numVal) && String(val).trim() !== '') return numVal;
+                        return String(val);
+                      });
+                    });
+                    
+                    const jsonData = JSON.stringify(dataDict);
+                    pyodide.runPython(`
 import json
 _temp_data = json.loads('''${jsonData.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}''')
 ${tableName} = pd.DataFrame(_temp_data)
 del _temp_data
 `);
-            }
-            
-            toast({
-              title: "DataFrames loaded",
-              description: `Available: ${questionTables.map(t => t.tableName).join(", ")}`,
-            });
-          } else if (sqlTableNames) {
-            // Create DataFrames from admin-provided table names
-            const tableNames = sqlTableNames.split(',').map(n => n.trim()).filter(n => n.length > 0);
-            if (tableNames.length > 0) {
-              for (const tableName of tableNames) {
-                pyodide.runPython(`${tableName} = pd.DataFrame()`);
-              }
-              toast({
-                title: "Note: Empty DataFrames",
-                description: `Created: ${tableNames.join(", ")}. Data from question not parsed.`,
-                variant: "destructive",
-              });
-            }
-          }
+                  }
+                } else if (adminTableNamesList.length > 0) {
+                  // Create empty DataFrames from admin-provided table names
+                  for (const tableName of adminTableNamesList) {
+                    pyodide.runPython(`${tableName} = pd.DataFrame()`);
+                  }
+                }
 
-          // Execute user's Python code
-          pyodide.runPython(executableCode);
-          
-          // Get output
-          outputText = pyodide.runPython("sys.stdout.getvalue()");
-          const stderrOutput = pyodide.runPython("sys.stderr.getvalue()");
-          
-          // If no stdout but code might return a value, try to get last expression
-          if (!outputText && !stderrOutput) {
-            // Try to capture the result of the last expression
-            try {
-              const lastLine = executableCode.trim().split('\n').pop() || '';
-              // If last line looks like an expression (not assignment, not print)
-              if (lastLine && !lastLine.includes('=') && !lastLine.startsWith('print') && !lastLine.startsWith('#')) {
-                const result = pyodide.runPython(`
+                // Execute user's Python code
+                pyodide.runPython(executableCode);
+                
+                // Get output
+                outputText = pyodide.runPython("sys.stdout.getvalue()");
+                const stderrOutput = pyodide.runPython("sys.stderr.getvalue()");
+                
+                // Check if expected output is JSON format (for DataFrame comparison)
+                let expectsJsonOutput = false;
+                try {
+                  if (expectedOutput) {
+                    const parsed = JSON.parse(expectedOutput);
+                    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.columns) && Array.isArray(parsed.values)) {
+                      expectsJsonOutput = true;
+                    }
+                  }
+                } catch {
+                  // Not JSON format
+                }
+                
+                // If no stdout but code might return a value, try to get last expression
+                if (!outputText && !stderrOutput) {
+                  try {
+                    const lastLine = executableCode.trim().split('\n').pop() || '';
+                    if (lastLine && !lastLine.includes('=') && !lastLine.startsWith('print') && !lastLine.startsWith('#')) {
+                      if (expectsJsonOutput) {
+                        // Try to get DataFrame as JSON
+                        pyodide.runPython(`
+import json
+try:
+    _result = ${lastLine}
+    if _result is not None:
+        if hasattr(_result, 'to_dict'):
+            _df_dict = _result.to_dict('records')
+            _df_json = json.dumps({"columns": list(_result.columns), "values": [[str(v) for v in row.values()] for row in _df_dict]}, indent=2)
+            print("__PYTHON_DF_JSON__")
+            print(_df_json)
+        elif hasattr(_result, 'to_string'):
+            print(_result.to_string())
+        else:
+            print(_result)
+except:
+    pass
+`);
+                      } else {
+                        pyodide.runPython(`
 try:
     _result = ${lastLine}
     if _result is not None:
@@ -1377,58 +1753,104 @@ try:
 except:
     pass
 `);
-                outputText = pyodide.runPython("sys.stdout.getvalue()");
+                      }
+                      outputText = pyodide.runPython("sys.stdout.getvalue()");
+                    }
+                  } catch (e) {
+                    // Ignore
+                  }
+                }
+                
+                if (stderrOutput && !outputText) {
+                  outputText = stderrOutput;
+                  hasError = true;
+                } else if (stderrOutput) {
+                  outputText = `${outputText}\n\nWarnings:\n${stderrOutput}`;
+                }
+                
+              } catch (pyError: any) {
+                hasError = true;
+                let pyErrorMsg = pyError.message || String(pyError);
+                
+                if (pyErrorMsg.includes("ModuleNotFoundError") || pyErrorMsg.includes("No module named")) {
+                  const moduleMatch = pyErrorMsg.match(/No module named ['"]([\w.-]+)['"]/);
+                  const moduleName = moduleMatch ? moduleMatch[1] : "unknown";
+                  pyErrorMsg = `Module "${moduleName}" is not available.\n\nAvailable: pandas, numpy, scipy, matplotlib, seaborn, scikit-learn, statsmodels, sympy, networkx, pillow, beautifulsoup4, lxml, regex\n\nNote: requests, tensorflow, torch are NOT available in browser Python.`;
+                } else if (pyErrorMsg.includes("NameError")) {
+                  // Use admin-provided names if available, otherwise use parsed names
+                  const adminTableNamesList: string[] = sqlTableNames
+                    ? sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0)
+                    : [];
+                  const availableDFs = adminTableNamesList.length > 0
+                    ? adminTableNamesList.join(", ")
+                    : questionTables.map(t => t.tableName).join(", ");
+                  const allDFs = availableDFs || (sqlTableNames ? sqlTableNames.split(',').map(n => n.trim()).filter(n => n).join(", ") : "");
+                  pyErrorMsg = `NameError: Variable or function not defined.\n\n${allDFs ? `Available DataFrames: ${allDFs}\n\n` : ""}${pyErrorMsg}`;
+                }
+                
+                outputText = `Error:\n${pyErrorMsg}`;
               }
-            } catch (e) {
-              // Ignore - just means no expression result
+
+              // Check if output contains DataFrame JSON format
+              let structuredOutput: { columns: string[]; values: any[][] } | null = null;
+              if (outputText && outputText.includes("__PYTHON_DF_JSON__")) {
+                try {
+                  const jsonMatch = outputText.match(/__PYTHON_DF_JSON__\s*(\{[\s\S]*\})/);
+                  if (jsonMatch && jsonMatch[1]) {
+                    const dfJson = JSON.parse(jsonMatch[1]);
+                    if (dfJson.columns && dfJson.values) {
+                      structuredOutput = {
+                        columns: dfJson.columns,
+                        values: dfJson.values
+                      };
+                      // Clean up text output
+                      outputText = outputText.replace(/__PYTHON_DF_JSON__\s*\{[\s\S]*\}/, '').trim() || outputText;
+                    }
+                  }
+                } catch (e) {
+                  // If JSON parsing fails, just use text output
+                }
+              }
+              
+              const finalOutput = outputText || "(No output - code ran but didn't print anything)";
+              setTextOutput(finalOutput);
+              setOutput(structuredOutput);
+              setValidationResult(null);
+              
+              if (hasError) {
+                toast({
+                  title: "Python Error",
+                  description: "Check the output for details.",
+                  variant: "destructive",
+                });
+              } else {
+                toast({
+                  title: "Code executed successfully",
+                  description: "Executed using in-browser Python (Pyodide).",
+                });
+              }
+              setLoading(false);
+              return;
+            } catch (pyodideError: any) {
+              errorMsg = `OneCompiler unavailable and Pyodide failed: ${pyodideError.message || String(pyodideError)}`;
             }
           }
           
-          if (stderrOutput && !outputText) {
-            outputText = stderrOutput;
-          } else if (stderrOutput) {
-            outputText = `${outputText}\n\nWarnings:\n${stderrOutput}`;
+          // Handle network errors
+          if (errorMsg.includes("fetch") || errorMsg.includes("network") || errorMsg.includes("Failed to fetch")) {
+            if (pyodide) {
+              errorMsg = `OneCompiler network error. Please try again or the system will use in-browser Python.\n\nOriginal error: ${errorMsg}`;
+            } else {
+              errorMsg = `Network Error: Could not connect to OneCompiler.\n\nPlease check your internet connection and try again.\n\nOriginal error: ${errorMsg}`;
+            }
           }
           
-        } catch (error: any) {
-          hasError = true;
-          let errorMsg = error.message || String(error);
-          
-          // Provide helpful error messages
-          if (errorMsg.includes("ModuleNotFoundError") || errorMsg.includes("No module named")) {
-            const moduleMatch = errorMsg.match(/No module named ['"]([\w.-]+)['"]/);
-            const moduleName = moduleMatch ? moduleMatch[1] : "unknown";
-            errorMsg = `Module "${moduleName}" is not available.\n\nAvailable: pandas, numpy, scipy, matplotlib, seaborn, scikit-learn, statsmodels, sympy, networkx, pillow, beautifulsoup4, lxml, regex\n\nNote: requests, tensorflow, torch are NOT available in browser Python.`;
-          } else if (errorMsg.includes("NameError")) {
-            const availableDFs = questionTables.map(t => t.tableName).join(", ");
-            const adminDFs = sqlTableNames ? sqlTableNames.split(',').map(n => n.trim()).filter(n => n).join(", ") : "";
-            const allDFs = availableDFs || adminDFs;
-            errorMsg = `NameError: Variable or function not defined.\n\n${allDFs ? `Available DataFrames: ${allDFs}\n\n` : ""}${errorMsg}`;
-          } else if (errorMsg.includes("SyntaxError")) {
-            errorMsg = `SyntaxError: Check your Python syntax.\n\n${errorMsg}`;
-          } else if (errorMsg.includes("TypeError")) {
-            errorMsg = `TypeError: Wrong type used.\n\n${errorMsg}`;
-          } else if (errorMsg.includes("KeyError")) {
-            errorMsg = `KeyError: Column/key not found. Check column names.\n\n${errorMsg}`;
-          }
-          
-          outputText = `Error:\n${errorMsg}`;
-        }
-
-        const finalOutput = outputText || "(No output - code ran but didn't print anything)";
-        setTextOutput(finalOutput);
-        setValidationResult(null);
-        
-        if (hasError) {
+          setTextOutput(`Error:\n${errorMsg}`);
+          setValidationResult(null);
           toast({
-            title: "Python Error",
-            description: "Check the output for details.",
+            title: "Execution Failed",
+            description: "Could not execute Python code. Check the output for details.",
             variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "Code executed successfully",
-            description: "Check the output below.",
           });
         }
       } else if (language === "javascript") {

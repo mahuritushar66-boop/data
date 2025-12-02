@@ -611,19 +611,19 @@ const AdminDashboard = () => {
     const q = query(collection(db, "blogPosts"), orderBy("order", "asc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const posts = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          title: data.title || "Untitled post",
-          excerpt: data.excerpt || "",
-          category: data.category || "General",
-          readTime: data.readTime,
-          date: data.date,
-          featured: Boolean(data.featured),
-          url: data.url,
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            title: data.title || "Untitled post",
+            excerpt: data.excerpt || "",
+            category: data.category || "General",
+            readTime: data.readTime,
+            date: data.date,
+            featured: Boolean(data.featured),
+            url: data.url,
           imageUrl: data.imageUrl,
           order: data.order ?? 999,
-        } as BlogPost;
+          } as BlogPost;
       });
       // Sort by order, then by createdAt
       posts.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
@@ -1278,7 +1278,7 @@ const AdminDashboard = () => {
           }
         }
         toast({ title: `${projectImageFiles.length} image(s) uploaded` });
-      }
+        }
 
       // Upload new PDFs to Cloudinary
       if (projectPdfFiles.length > 0) {
@@ -1292,7 +1292,7 @@ const AdminDashboard = () => {
               pdfUrls.push(url);
             } catch (error: any) {
               console.error("Cloudinary PDF upload failed:", error);
-              toast({ 
+        toast({
                 title: "PDF upload failed", 
                 description: error.message,
                 variant: "destructive" 
@@ -1413,13 +1413,13 @@ const AdminDashboard = () => {
       }
 
       const blogData = {
-        title: blogForm.title.trim(),
-        excerpt: blogForm.excerpt.trim(),
-        category: blogForm.category.trim() || "General",
-        readTime: blogForm.readTime.trim() || undefined,
-        date: blogForm.date.trim() || undefined,
-        featured: blogForm.featured,
-        url: blogForm.url.trim(),
+          title: blogForm.title.trim(),
+          excerpt: blogForm.excerpt.trim(),
+          category: blogForm.category.trim() || "General",
+          readTime: blogForm.readTime.trim() || undefined,
+          date: blogForm.date.trim() || undefined,
+          featured: blogForm.featured,
+          url: blogForm.url.trim(),
         imageUrl: imageUrl || undefined,
       };
 
@@ -3481,27 +3481,27 @@ id, name, salary
             </DialogHeader>
             <div className="space-y-4 overflow-y-auto flex-1 pr-2">
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="space-y-2">
                   <Label>Heading / Title *</Label>
-                  <Input
-                    value={projectForm.title}
-                    onChange={(e) => setProjectForm((prev) => ({ ...prev, title: e.target.value }))}
+                <Input
+                  value={projectForm.title}
+                  onChange={(e) => setProjectForm((prev) => ({ ...prev, title: e.target.value }))}
                     placeholder="Project Title"
-                  />
-                </div>
-                <div className="space-y-2">
+                />
+              </div>
+              <div className="space-y-2">
                   <Label>Description *</Label>
-                  <Textarea
+                <Textarea
                     rows={2}
-                    value={projectForm.description}
-                    onChange={(e) => setProjectForm((prev) => ({ ...prev, description: e.target.value }))}
+                  value={projectForm.description}
+                  onChange={(e) => setProjectForm((prev) => ({ ...prev, description: e.target.value }))}
                     placeholder="Brief description..."
-                  />
-                </div>
+                />
+              </div>
               </div>
 
               {/* Multiple Google Drive Links */}
-              <div className="space-y-2">
+                <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Google Drive Links *</Label>
                   <Button
@@ -3515,7 +3515,7 @@ id, name, salary
                 </div>
                 {projectForm.driveLinks.map((link, index) => (
                   <div key={index} className="flex gap-2">
-                    <Input
+                  <Input
                       value={link}
                       onChange={(e) => {
                         const newLinks = [...projectForm.driveLinks];
@@ -3537,14 +3537,14 @@ id, name, salary
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     )}
-                  </div>
+                </div>
                 ))}
               </div>
 
               {/* Multiple Images Upload */}
-              <div className="space-y-2">
+                <div className="space-y-2">
                 <Label>Images (up to 4)</Label>
-                <Input
+                  <Input
                   type="file"
                   accept="image/*"
                   multiple
@@ -3571,9 +3571,9 @@ id, name, salary
                         >
                           ×
                         </button>
-                      </div>
+                </div>
                     ))}
-                  </div>
+                </div>
                 )}
               </div>
 
@@ -3609,7 +3609,7 @@ id, name, salary
                         >
                           Remove
                         </button>
-                      </div>
+              </div>
                     ))}
                   </div>
                 )}
@@ -3653,7 +3653,7 @@ id, name, salary
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-lg font-semibold">{project.title}</p>
+                  <p className="text-lg font-semibold">{project.title}</p>
                     <p className="text-sm text-muted-foreground line-clamp-2">{project.description}</p>
                     <div className="flex flex-wrap gap-2 mt-2">
                       {links.map((link, idx) => (
@@ -3677,17 +3677,17 @@ id, name, salary
                           {images.length} Image{images.length > 1 ? "s" : ""}
                         </Badge>
                       )}
-                    </div>
+                </div>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
-                    <Button size="icon" variant="outline" onClick={() => openProjectDialog(project)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button size="icon" variant="destructive" onClick={() => handleDeleteProject(project.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Button size="icon" variant="outline" onClick={() => openProjectDialog(project)}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="destructive" onClick={() => handleDeleteProject(project.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
+              </div>
               </div>
             );
           })
@@ -3716,14 +3716,14 @@ id, name, salary
             </DialogHeader>
             <div className="space-y-4 overflow-y-auto flex-1 pr-2">
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="blog-title">Title *</Label>
-                  <Input
-                    id="blog-title"
-                    placeholder="Enter blog post title"
-                    value={blogForm.title}
-                    onChange={(e) => setBlogForm((prev) => ({ ...prev, title: e.target.value }))}
-                  />
+              <div className="space-y-2">
+                <Label htmlFor="blog-title">Title *</Label>
+                <Input
+                  id="blog-title"
+                  placeholder="Enter blog post title"
+                  value={blogForm.title}
+                  onChange={(e) => setBlogForm((prev) => ({ ...prev, title: e.target.value }))}
+                />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="blog-category">Category</Label>
@@ -3799,19 +3799,19 @@ id, name, salary
                 )}
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-border">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="blog-featured"
-                    checked={blogForm.featured}
-                    onCheckedChange={(checked) => setBlogForm((prev) => ({ ...prev, featured: checked === true }))}
-                  />
-                  <Label htmlFor="blog-featured" className="text-sm font-normal cursor-pointer">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="blog-featured"
+                  checked={blogForm.featured}
+                  onCheckedChange={(checked) => setBlogForm((prev) => ({ ...prev, featured: checked === true }))}
+                />
+                <Label htmlFor="blog-featured" className="text-sm font-normal cursor-pointer">
                     Mark as featured
-                  </Label>
-                </div>
-                <Button onClick={handleSaveBlog} disabled={isSavingBlog}>
-                  {isSavingBlog ? "Saving..." : editingBlog ? "Save changes" : "Add blog post"}
-                </Button>
+                </Label>
+              </div>
+              <Button onClick={handleSaveBlog} disabled={isSavingBlog}>
+                {isSavingBlog ? "Saving..." : editingBlog ? "Save changes" : "Add blog post"}
+              </Button>
               </div>
             </div>
           </DialogContent>

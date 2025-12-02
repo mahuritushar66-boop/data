@@ -32,9 +32,10 @@ const Navigation = () => {
     location.pathname.startsWith("/interview-prep/module") ||
     location.pathname.startsWith("/interview-prep/question");
   const isQuestionPage = location.pathname.startsWith("/interview-prep/question") && !location.pathname.includes("/hint");
+  const isTheoryQuestionPage = location.pathname.startsWith("/theory-question");
   const isInterviewPrepPage = location.pathname === "/interview-prep";
   const hideNavLinks = isAuthPage || isAdminPage || isPracticePage;
-  const hideNavbar = isQuestionPage; // Hide entire navbar on question pages
+  const hideNavbar = isQuestionPage; // Hide entire navbar only on regular question pages (not theory questions)
   const showBackButton = isPracticePage || isInterviewPrepPage;
 
   // Fetch module slug from question when on question page (only if not hidden)
