@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles, Eye, Copy, Check, ArrowRight, ArrowLeft, User, LogOut, Trophy } from "lucide-react";
+import { CheckCircle2, Loader2, Terminal, Code2, FileText, Lightbulb, Sparkles, Eye, Copy, Check, ArrowRight, ArrowLeft, User, LogOut, Trophy, Clock } from "lucide-react";
 import CompanyLogo from "@/components/CompanyLogo";
 import { db } from "@/lib/firebase";
 import { doc, onSnapshot, collection, query, orderBy, getDocs, where } from "firebase/firestore";
@@ -373,6 +373,8 @@ const QuestionDetail = () => {
   const [isResizingHorizontal, setIsResizingHorizontal] = useState(false);
   const [isResizingVertical, setIsResizingVertical] = useState(false);
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 1024);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  const [timerStarted, setTimerStarted] = useState(false);
 
   useEffect(() => {
     const updateIsDesktop = () => {
@@ -386,6 +388,12 @@ const QuestionDetail = () => {
   // Scroll to top when component mounts
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [questionId]);
+
+  // Reset timer when question changes
+  useEffect(() => {
+    setTimerStarted(false);
+    setTimeRemaining(null);
   }, [questionId]);
 
   // Save panel widths to localStorage
@@ -634,6 +642,62 @@ const QuestionDetail = () => {
     setActiveTab("solution");
   };
 
+  // Timer logic
+  useEffect(() => {
+    if (!question || !timerStarted || timeRemaining === null) return;
+
+    if (timeRemaining <= 0) {
+      toast({
+        title: "Time's Up!",
+        description: "The timer has reached zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev === null || prev <= 0) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [question, timerStarted, timeRemaining, toast]);
+
+  // Get initial time based on difficulty
+  const getTimeForDifficulty = (difficulty?: string) => {
+    switch (difficulty) {
+      case "easy": return 5 * 60; // 5 minutes
+      case "medium": return 8 * 60; // 8 minutes
+      case "hard": return 10 * 60; // 10 minutes
+      default: return 8 * 60; // Default to 8 minutes
+    }
+  };
+
+  // Start timer function
+  const startTimer = () => {
+    if (question && !timerStarted) {
+      const initialTime = getTimeForDifficulty(question.difficulty);
+      setTimeRemaining(initialTime);
+      setTimerStarted(true);
+      toast({
+        title: "Timer Started",
+        description: `You have ${formatTime(initialTime)} to complete this question.`,
+      });
+    }
+  };
+
+  // Format time as MM:SS
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen py-20 flex items-center justify-center">
@@ -818,6 +882,32 @@ const QuestionDetail = () => {
                   {question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1)}
                 </Badge>
               )}
+              {/* Timer */}
+              {!timerStarted ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={startTimer}
+                  className="gap-1.5 px-3 py-1 text-sm font-medium border-blue-500/60 text-blue-400 bg-blue-500/15 hover:bg-blue-500/15 hover:border-blue-500/60"
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  Start Timer ({formatTime(getTimeForDifficulty(question?.difficulty))})
+                </Button>
+              ) : timeRemaining !== null ? (
+                <Badge
+                  variant="outline"
+                  className={`gap-1.5 px-3 py-1 text-sm font-medium font-mono ${
+                    timeRemaining <= 60
+                      ? "border-red-500/60 text-red-400 bg-red-500/15"
+                      : timeRemaining <= 180
+                      ? "border-yellow-500/60 text-yellow-400 bg-yellow-500/15"
+                      : "border-blue-500/60 text-blue-400 bg-blue-500/15"
+                  }`}
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  {formatTime(timeRemaining)}
+                </Badge>
+              ) : null}
               <Badge variant="outline" className="gap-2 px-3 py-1.5 border-border/50">
                 <Code2 className="h-3.5 w-3.5" />
                 <span className="font-medium">{language.toUpperCase()}</span>
