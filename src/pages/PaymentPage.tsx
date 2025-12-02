@@ -220,8 +220,14 @@ const PaymentPage = () => {
   }
 
   return (
-    <div className="min-h-screen pb-20 pt-4">
-      <div className="container mx-auto px-2 lg:px-6 max-w-4xl">
+    <div className="min-h-screen pb-20 pt-20">
+      <div className="container mx-auto px-4 lg:px-6 max-w-4xl">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl md:text-4xl font-bold mb-2">Unlock Premium Access</h1>
+          <p className="text-muted-foreground">Choose a plan that works for you</p>
+        </div>
+
         <div className="mb-6">
           <Button 
             variant="ghost" 
@@ -229,7 +235,7 @@ const PaymentPage = () => {
             onClick={() => navigate(`/interview-prep/module/${encodeURIComponent(moduleTitle)}`)}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to module
+            Back to {moduleTitle}
           </Button>
         </div>
 

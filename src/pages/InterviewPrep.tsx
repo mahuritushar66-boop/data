@@ -97,7 +97,7 @@ const InterviewPrep = () => {
               title: data.module, // Theory questions use 'module' field as title
               question: data.question,
               tier: "free" as "free" | "paid",
-              questionTitle: data.question?.substring(0, 60) + (data.question?.length > 60 ? "..." : ""),
+              questionTitle: data.questionTitle || (data.question?.substring(0, 60) + (data.question?.length > 60 ? "..." : "")),
               difficulty: data.difficulty as "easy" | "medium" | "hard" | undefined,
               company: data.company,
               isTheory: true,

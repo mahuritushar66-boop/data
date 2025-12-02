@@ -174,6 +174,7 @@ const NON_CODE_MODULES = ["Puzzle", "AI", "ML", "Theory", "Aptitude", "Logical R
 type TheoryQuestion = {
   id: string;
   module: string; // Puzzle, AI, ML, etc.
+  questionTitle?: string;
   question: string;
   hint?: string;
   imageUrls?: string[];
@@ -352,6 +353,7 @@ const AdminDashboard = () => {
   const [editingTheory, setEditingTheory] = useState<TheoryQuestion | null>(null);
   const [theoryForm, setTheoryForm] = useState({
     module: "",
+    questionTitle: "",
     question: "",
     hint: "",
     company: "",
@@ -430,6 +432,7 @@ const AdminDashboard = () => {
           return {
             id: docSnap.id,
             module: data.module,
+            questionTitle: data.questionTitle,
             question: data.question,
             hint: data.hint,
             imageUrls: data.imageUrls || [],
@@ -1910,6 +1913,7 @@ const AdminDashboard = () => {
       setEditingTheory(theory);
       setTheoryForm({
         module: theory.module,
+        questionTitle: theory.questionTitle || "",
         question: theory.question,
         hint: theory.hint || "",
         company: theory.company || "",
@@ -1919,6 +1923,7 @@ const AdminDashboard = () => {
       setEditingTheory(null);
       setTheoryForm({
         module: "",
+        questionTitle: "",
         question: "",
         hint: "",
         company: "",
@@ -2007,6 +2012,7 @@ const AdminDashboard = () => {
 
       const theoryData = {
         module: theoryForm.module.trim(),
+        questionTitle: theoryForm.questionTitle.trim() || null,
         question: theoryForm.question.trim(),
         hint: theoryForm.hint.trim() || null,
         company: theoryForm.company.trim() || null,
@@ -3111,6 +3117,16 @@ id, name, salary
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label>Question Title</Label>
+                <Input
+                  value={theoryForm.questionTitle}
+                  onChange={(e) => setTheoryForm((prev) => ({ ...prev, questionTitle: e.target.value }))}
+                  placeholder="e.g., Find the missing number, Pattern recognition..."
+                />
+                <p className="text-xs text-muted-foreground">A short title shown in the question list</p>
+              </div>
               
               <div className="space-y-2">
                 <Label>Question *</Label>
@@ -3118,7 +3134,7 @@ id, name, salary
                   rows={5}
                   value={theoryForm.question}
                   onChange={(e) => setTheoryForm((prev) => ({ ...prev, question: e.target.value }))}
-                  placeholder="Write the question here..."
+                  placeholder="Write the full question here..."
                 />
               </div>
               
@@ -3260,7 +3276,10 @@ id, name, salary
                       <Badge variant="outline">{theory.imageUrls.length} Image(s)</Badge>
                     )}
                   </div>
-                  <p className="text-sm">{theory.question.substring(0, 200)}{theory.question.length > 200 ? "..." : ""}</p>
+                  {theory.questionTitle && (
+                    <p className="font-medium text-base">{theory.questionTitle}</p>
+                  )}
+                  <p className="text-sm text-muted-foreground">{theory.question.substring(0, 150)}{theory.question.length > 150 ? "..." : ""}</p>
                   {theory.hint && (
                     <p className="text-xs text-muted-foreground">
                       <span className="font-semibold">Hint:</span> {theory.hint.substring(0, 100)}...

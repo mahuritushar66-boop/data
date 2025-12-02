@@ -224,7 +224,7 @@ const InterviewModule = () => {
               tier: "free" as "free" | "paid",
               createdAt: data.createdAt?.toDate?.(),
               title: data.module || "", // Use module as title
-              questionTitle: data.question ? (data.question.substring(0, 60) + (data.question.length > 60 ? "..." : "")) : "Untitled",
+              questionTitle: data.questionTitle || (data.question ? (data.question.substring(0, 60) + (data.question.length > 60 ? "..." : "")) : "Untitled"),
               difficulty: data.difficulty as "easy" | "medium" | "hard" | undefined,
               company: data.company,
               order: data.order,

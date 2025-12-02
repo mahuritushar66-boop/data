@@ -101,13 +101,13 @@ const Navigation = () => {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-12">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-2 group">
             <img 
               src="/logo.jpg" 
               alt="BytesOfData Logo" 
-              className="h-20  w-16 object-contain group-hover:opacity-80 transition-opacity"
+              className="h-10 w-10 object-contain group-hover:opacity-80 transition-opacity"
             />
           </Link>
 
