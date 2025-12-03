@@ -409,6 +409,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
 
       setAwardedXPAmount(xpAmount);
       setHasAwardedXP(true);
+      
       // Don't show toast here, let the modal handle it
       return true;
     } catch (error: any) {

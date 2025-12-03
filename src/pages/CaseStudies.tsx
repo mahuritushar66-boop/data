@@ -10,15 +10,23 @@ import { useToast } from "@/hooks/use-toast";
 type CaseStudy = {
   id: string;
   title: string;
-  description: string;
+  description: string; // 1-line summary
   industry: string;
+  problemStatement?: string;
+  overview?: string;
   techniques: string[];
   outcomes: string[];
   datasetUrl?: string;
   notebookUrl?: string;
+  demoUrl?: string;
+  githubUrl?: string;
   pdfUrl?: string;
   viewUrl?: string;
   coverEmoji?: string;
+  timeToBuild?: string;
+  difficultyLevel?: string;
+  techStackIcons?: string;
+  badge?: string;
 };
 
 const CaseStudies = () => {
@@ -39,6 +47,8 @@ const CaseStudies = () => {
               title: data.title || "Untitled Study",
               description: data.description || "",
               industry: data.industry || "General",
+              problemStatement: data.problemStatement,
+              overview: data.overview,
               techniques: Array.isArray(data.techniques)
                 ? data.techniques
                 : typeof data.techniques === "string"
@@ -51,9 +61,15 @@ const CaseStudies = () => {
                 : [],
               datasetUrl: data.datasetUrl,
               notebookUrl: data.notebookUrl,
+              demoUrl: data.demoUrl,
+              githubUrl: data.githubUrl,
               pdfUrl: data.pdfUrl,
               viewUrl: data.viewUrl,
               coverEmoji: data.coverEmoji,
+              timeToBuild: data.timeToBuild,
+              difficultyLevel: data.difficultyLevel,
+              techStackIcons: data.techStackIcons,
+              badge: data.badge,
             } as CaseStudy;
           }),
         );
@@ -93,80 +109,91 @@ const CaseStudies = () => {
             <p className="text-muted-foreground">Check back soon for new updates.</p>
           </GlassCard>
         ) : (
-          <div className="space-y-8">
-            {studies.map((study) => (
-              <GlassCard key={study.id} className="hover:border-primary/50">
-                <div className="flex flex-col lg:flex-row gap-6">
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                      <Badge className="bg-primary">{study.industry}</Badge>
-                      {study.techniques.map((tech) => (
-                        <Badge key={tech} variant="outline">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {studies.map((study) => {
+              const techStack = study.techStackIcons 
+                ? study.techStackIcons.split(",").map((item: string) => item.trim())
+                : [];
+              const firstOutcome = study.outcomes && study.outcomes.length > 0 ? study.outcomes[0] : "";
+              const industryParts = study.industry.split("|").map((item: string) => item.trim());
+              
+              return (
+                <GlassCard key={study.id} className="flex flex-col hover:border-primary/50 transition-all">
+                  {/* Cover Emoji */}
+                  <div className="text-4xl mb-3">{study.coverEmoji || "📊"}</div>
+                  
+                  {/* Title */}
+                  <h3 className="text-xl font-bold mb-2 line-clamp-2">{study.title}</h3>
+                  
+                  {/* Industry Tag */}
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {industryParts.map((part, idx) => (
+                      <Badge key={idx} variant="outline" className="text-xs">
+                        {part}
+                      </Badge>
+                    ))}
+                  </div>
+                  
+                  {/* 1-Line Summary */}
+                  <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{study.description}</p>
+                  
+                  {/* Key Outcome Highlight */}
+                  {firstOutcome && (
+                    <div className="mb-3">
+                      <Badge variant="secondary" className="text-xs font-semibold bg-primary/20 text-primary">
+                        {firstOutcome}
+                      </Badge>
+                    </div>
+                  )}
+                  
+                  {/* Difficulty + Time */}
+                  {(study.difficultyLevel || study.timeToBuild) && (
+                    <div className="mb-3 text-xs text-muted-foreground">
+                      {study.difficultyLevel && study.timeToBuild 
+                        ? `${study.difficultyLevel} • ${study.timeToBuild}`
+                        : study.difficultyLevel || study.timeToBuild}
+                    </div>
+                  )}
+                  
+                  {/* Tech Stack Icons */}
+                  {techStack.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-1 text-xs">
+                      {techStack.map((tech, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
                           {tech}
                         </Badge>
                       ))}
                     </div>
-
-                    <h3 className="text-2xl font-bold mb-3">{study.title}</h3>
-                    <p className="text-muted-foreground mb-4">{study.description}</p>
-
-                    <div className="mb-4">
-                      <h4 className="font-semibold mb-2 text-primary">Key outcomes</h4>
-                      <ul className="space-y-1">
-                        {study.outcomes.map((outcome, idx) => (
-                          <li key={idx} className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <span className="text-primary">✓</span>
-                            {outcome}
-                          </li>
-                        ))}
-                      </ul>
+                  )}
+                  
+                  {/* Badge */}
+                  {study.badge && (
+                    <div className="mb-3">
+                      <Badge variant="outline" className="text-xs">
+                        ⭐ {study.badge}
+                      </Badge>
                     </div>
-
-                    <div className="flex flex-wrap gap-3">
-                      {study.datasetUrl && (
-                        <Button asChild size="sm" variant="outline" className="gap-2">
-                          <a href={study.datasetUrl} target="_blank" rel="noreferrer">
-                            <Download className="h-4 w-4" />
-                            Dataset
-                          </a>
-                        </Button>
-                      )}
-                      {study.notebookUrl && (
-                        <Button asChild size="sm" variant="outline" className="gap-2">
-                          <a href={study.notebookUrl} target="_blank" rel="noreferrer">
-                            <Code className="h-4 w-4" />
-                            Notebook
-                          </a>
-                        </Button>
-                      )}
-                      {study.pdfUrl && (
-                        <Button asChild size="sm" variant="outline" className="gap-2">
-                          <a href={study.pdfUrl} target="_blank" rel="noreferrer">
-                            <Download className="h-4 w-4" />
-                            PDF report
-                          </a>
-                        </Button>
-                      )}
-                      {study.viewUrl && (
-                        <Button asChild size="sm" className="bg-gradient-primary gap-2">
-                          <a href={study.viewUrl} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                            View full analysis
-                          </a>
-                        </Button>
-                      )}
-                    </div>
+                  )}
+                  
+                  {/* View Case Study Button */}
+                  <div className="mt-auto pt-3">
+                    {study.viewUrl ? (
+                      <Button asChild className="w-full bg-gradient-primary gap-2" size="sm">
+                        <a href={study.viewUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                          View Case Study
+                        </a>
+                      </Button>
+                    ) : (
+                      <Button className="w-full bg-gradient-primary gap-2" size="sm" disabled>
+                        <ExternalLink className="h-4 w-4" />
+                        View Case Study
+                      </Button>
+                    )}
                   </div>
-
-                  <div className="lg:w-80 h-64 bg-gradient-subtle rounded-lg flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-6xl mb-2">{study.coverEmoji || "📊"}</div>
-                      <p className="text-sm text-muted-foreground">Analysis Visualization</p>
-                    </div>
-                  </div>
-                </div>
-              </GlassCard>
-            ))}
+                </GlassCard>
+              );
+            })}
           </div>
         )}
       </div>

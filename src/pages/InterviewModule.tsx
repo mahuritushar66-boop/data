@@ -88,6 +88,11 @@ const InterviewModule = () => {
   const [tierFilter, setTierFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [moduleCompletionStatus, setModuleCompletionStatus] = useState<{
+    isCompleted: boolean;
+    totalQuestions: number;
+    completedQuestions: number;
+  } | null>(null);
 
   const hasGlobalAccess = Boolean(profile?.hasGlobalAccess || profile?.isPaid);
   const hasModuleAccess = Boolean(profile?.purchasedModules && profile.purchasedModules[modulePricingDocId]);
@@ -259,6 +264,7 @@ const InterviewModule = () => {
   useEffect(() => {
     if (!currentUser) {
       setCompletedQuestions(new Set());
+      setModuleCompletionStatus(null);
       return;
     }
 
@@ -271,12 +277,50 @@ const InterviewModule = () => {
         if (data.userId === currentUser.uid && data.status === "completed") {
           completed.add(data.questionId);
         }
+        // Also check for theory questions
+        const docId = docSnap.id;
+        if (docId.startsWith(`${currentUser.uid}_theory_`)) {
+          const questionId = docId.replace(`${currentUser.uid}_theory_`, '');
+          completed.add(questionId);
+        }
       });
       setCompletedQuestions(completed);
     });
 
     return unsubscribe;
   }, [currentUser]);
+
+  // Check module completion status
+  useEffect(() => {
+    const checkCompletion = async () => {
+      if (!currentUser) {
+        setModuleCompletionStatus(null);
+        return;
+      }
+
+      try {
+        // Count total questions
+        const totalQuestions = questions.length;
+        
+        // Count completed questions
+        const completedCount = questions.filter(q => completedQuestions.has(q.id)).length;
+        
+        setModuleCompletionStatus({
+          isCompleted: completedCount === totalQuestions && totalQuestions > 0,
+          totalQuestions,
+          completedQuestions: completedCount,
+        });
+      } catch (error) {
+        console.error("Error checking completion:", error);
+        setModuleCompletionStatus(null);
+      }
+    };
+
+    // Only check if we have questions loaded
+    if (questions.length > 0) {
+      checkCompletion();
+    }
+  }, [currentUser, moduleTitle, questions.length, completedQuestions.size]);
 
   const companyOptions = useMemo(() => {
     const values = new Set<string>();
@@ -345,6 +389,7 @@ const InterviewModule = () => {
       navigate(`/interview-prep/question/${question.id}`);
     }
   };
+
 
   const handleCheckout = async (mode: "module" | "global") => {
     if (!currentUser) {
@@ -489,6 +534,7 @@ const InterviewModule = () => {
             {questions.length} curated interview question{questions.length !== 1 && "s"} covering real whiteboard challenges and take-home assignments.
           </p>
         </div>
+
 
         {/* Questions Table */}
         <GlassCard className="p-6 space-y-4">

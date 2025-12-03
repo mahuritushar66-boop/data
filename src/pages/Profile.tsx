@@ -86,8 +86,9 @@ const Profile = () => {
             </p>
           </div>
 
-          {/* Profile Information Card */}
-          <GlassCard className="p-6 space-y-6">
+          {/* Profile Content */}
+          <div className="mt-6">
+              <GlassCard className="p-6 space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-semibold">Account Information</h2>
               <Badge variant={profile?.isPaid ? "default" : "outline"} className="gap-1.5">
@@ -198,6 +199,7 @@ const Profile = () => {
               </div>
             </div>
           </GlassCard>
+          </div>
         </div>
       </div>
     </div>

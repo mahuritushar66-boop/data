@@ -87,25 +87,41 @@ type ManagedUser = {
 type CaseStudy = {
   id: string;
   title: string;
-  description: string;
+  description: string; // 1-line summary
   industry: string;
-  techniques: string[];
-  outcomes: string[];
+  problemStatement?: string;
+  overview?: string; // Full overview/description
+  techniques: string[]; // Comma separated
+  outcomes: string[]; // Key outcomes (bullet points)
   datasetUrl?: string;
   notebookUrl?: string;
-  pdfUrl?: string;
-  viewUrl?: string;
-  coverEmoji?: string;
+  demoUrl?: string;
+  githubUrl?: string;
+  pdfUrl?: string; // PDF Report URL
+  viewUrl?: string; // Full Analysis URL
+  coverEmoji?: string; // Cover Emoji / Image
+  timeToBuild?: string; // Time to Build
+  difficultyLevel?: string; // Difficulty Level
+  techStackIcons?: string; // Tech Stack Icons (comma separated)
+  badge?: string; // Badge (e.g., "Deployed App Available")
 };
 
 type ProjectResource = {
   id: string;
   title: string;
-  description: string;
+  description: string; // Short Description (1–2 lines)
+  techStackIcons?: string; // Tech Stack Icons (comma separated)
+  mainCategory?: string; // Main Category (ML, Python, NLP, SQL, Automation, Dashboards, Web App)
+  keyFeature?: string; // Key Feature / Highlight (One line)
+  demoUrl?: string; // Demo URL
+  githubUrl?: string; // GitHub URL
+  thumbnailEmoji?: string; // Thumbnail Image / Emoji
+  difficultyLevel?: string; // Difficulty Level
+  timeToBuild?: string; // Time to Build
+  // Legacy fields (for backward compatibility)
   imageUrls?: string[]; // Multiple images
   pdfUrls?: string[]; // Multiple PDFs
   driveLinks?: string[]; // Multiple drive links
-  // Legacy single fields (for backward compatibility)
   imageUrl?: string;
   driveLink?: string;
 };
@@ -145,9 +161,12 @@ type AboutContent = {
   skills: string[];
   timeline: {
     year: string;
+    startYear?: string;
+    endYear?: string;
     title: string;
     company: string;
     desc: string;
+    experienceDetails?: string[];
   }[];
   achievements: {
     icon: string;
@@ -159,12 +178,21 @@ type AboutContent = {
 type Service = {
   id: string;
   icon: string;
+  serviceCategory?: string; // Service Category
   title: string;
-  description: string;
-  features: string[];
-  price: string;
-  ctaLabel?: string;
-  ctaUrl?: string;
+  price: string; // Price (or Starting Price)
+  description: string; // Short Description
+  features: string[]; // Features / Capabilities (one per line)
+  deliverables?: string[]; // Deliverables (one per line)
+  timeline?: string; // Timeline / Duration
+  tools?: string; // Tools / Tech Stack
+  idealFor?: string; // Ideal For (Target Client)
+  ctaLabel?: string; // CTA Button Label
+  ctaUrl?: string; // CTA Button URL
+  badge?: string; // Badge (e.g., "Bestseller")
+  rating?: number; // Rating (1-5)
+  testimonials?: string; // Testimonials (optional)
+  faq?: string; // FAQ (optional)
 };
 type AdminSection = "dashboard" | "questions" | "theory-questions" | "case-studies" | "projects" | "blog" | "courses" | "about" | "services" | "users" | "testimonials" | "module-order" | "question-order";
 
@@ -249,15 +277,23 @@ const AdminDashboard = () => {
   const [editingCaseStudy, setEditingCaseStudy] = useState<CaseStudy | null>(null);
   const [caseStudyForm, setCaseStudyForm] = useState({
     title: "",
-    description: "",
+    description: "", // 1-line summary
     industry: "",
+    problemStatement: "",
+    overview: "", // Full overview/description
     techniques: "",
     outcomes: "",
     datasetUrl: "",
     notebookUrl: "",
+    demoUrl: "",
+    githubUrl: "",
     pdfUrl: "",
     viewUrl: "",
     coverEmoji: "",
+    timeToBuild: "",
+    difficultyLevel: "",
+    techStackIcons: "",
+    badge: "",
   });
   const [projects, setProjects] = useState<ProjectResource[]>([]);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
@@ -266,6 +302,14 @@ const AdminDashboard = () => {
   const [projectForm, setProjectForm] = useState({
     title: "",
     description: "",
+    techStackIcons: "",
+    mainCategory: "",
+    keyFeature: "",
+    demoUrl: "",
+    githubUrl: "",
+    thumbnailEmoji: "",
+    difficultyLevel: "",
+    timeToBuild: "",
     imageUrls: [] as string[],
     pdfUrls: [] as string[],
     driveLinks: [""] as string[], // Start with one empty field
@@ -315,7 +359,7 @@ const AdminDashboard = () => {
     avatarUrl: "",
     story: "",
     skills: "",
-    timeline: [] as { year: string; title: string; company: string; desc: string }[],
+    timeline: [] as { year: string; startYear?: string; endYear?: string; title: string; company: string; desc: string; experienceDetails?: string[] }[],
     achievements: [] as { icon: string; value: string; label: string }[],
   });
   const [aboutAvatarFile, setAboutAvatarFile] = useState<File | null>(null);
@@ -325,12 +369,21 @@ const AdminDashboard = () => {
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [serviceForm, setServiceForm] = useState({
     icon: "Briefcase",
+    serviceCategory: "",
     title: "",
+    price: "",
     description: "",
     features: "",
-    price: "",
+    deliverables: "",
+    timeline: "",
+    tools: "",
+    idealFor: "",
     ctaLabel: "",
     ctaUrl: "",
+    badge: "",
+    rating: 5,
+    testimonials: "",
+    faq: "",
   });
   const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [isTestimonialDialogOpen, setIsTestimonialDialogOpen] = useState(false);
@@ -1103,13 +1156,21 @@ const AdminDashboard = () => {
         title: study.title,
         description: study.description,
         industry: study.industry,
+        problemStatement: study.problemStatement || "",
+        overview: study.overview || "",
         techniques: study.techniques.join(", "),
         outcomes: study.outcomes.join("\n"),
         datasetUrl: study.datasetUrl || "",
         notebookUrl: study.notebookUrl || "",
+        demoUrl: study.demoUrl || "",
+        githubUrl: study.githubUrl || "",
         pdfUrl: study.pdfUrl || "",
         viewUrl: study.viewUrl || "",
         coverEmoji: study.coverEmoji || "",
+        timeToBuild: study.timeToBuild || "",
+        difficultyLevel: study.difficultyLevel || "",
+        techStackIcons: study.techStackIcons || "",
+        badge: study.badge || "",
       });
     } else {
       setEditingCaseStudy(null);
@@ -1117,13 +1178,21 @@ const AdminDashboard = () => {
         title: "",
         description: "",
         industry: "",
+        problemStatement: "",
+        overview: "",
         techniques: "",
         outcomes: "",
         datasetUrl: "",
         notebookUrl: "",
+        demoUrl: "",
+        githubUrl: "",
         pdfUrl: "",
         viewUrl: "",
         coverEmoji: "",
+        timeToBuild: "",
+        difficultyLevel: "",
+        techStackIcons: "",
+        badge: "",
       });
     }
     setIsCaseDialogOpen(true);
@@ -1140,6 +1209,14 @@ const AdminDashboard = () => {
       setProjectForm({
         title: project.title,
         description: project.description,
+        techStackIcons: project.techStackIcons || "",
+        mainCategory: project.mainCategory || "",
+        keyFeature: project.keyFeature || "",
+        demoUrl: project.demoUrl || "",
+        githubUrl: project.githubUrl || "",
+        thumbnailEmoji: project.thumbnailEmoji || "",
+        difficultyLevel: project.difficultyLevel || "",
+        timeToBuild: project.timeToBuild || "",
         imageUrls,
         pdfUrls,
         driveLinks: driveLinks.length > 0 ? driveLinks : [""],
@@ -1151,6 +1228,14 @@ const AdminDashboard = () => {
       setProjectForm({
         title: "",
         description: "",
+        techStackIcons: "",
+        mainCategory: "",
+        keyFeature: "",
+        demoUrl: "",
+        githubUrl: "",
+        thumbnailEmoji: "",
+        difficultyLevel: "",
+        timeToBuild: "",
         imageUrls: [],
         pdfUrls: [],
         driveLinks: [""],
@@ -1306,6 +1391,14 @@ const AdminDashboard = () => {
       const projectData = {
         title: projectForm.title.trim(),
         description: projectForm.description.trim(),
+        techStackIcons: projectForm.techStackIcons.trim() || undefined,
+        mainCategory: projectForm.mainCategory.trim() || undefined,
+        keyFeature: projectForm.keyFeature.trim() || undefined,
+        demoUrl: projectForm.demoUrl.trim() || undefined,
+        githubUrl: projectForm.githubUrl.trim() || undefined,
+        thumbnailEmoji: projectForm.thumbnailEmoji.trim() || undefined,
+        difficultyLevel: projectForm.difficultyLevel.trim() || undefined,
+        timeToBuild: projectForm.timeToBuild.trim() || undefined,
         imageUrls,
         pdfUrls,
         driveLinks: validDriveLinks,
@@ -1658,7 +1751,7 @@ const AdminDashboard = () => {
   const addTimelineItem = () => {
     setAboutForm((prev) => ({
       ...prev,
-      timeline: [...prev.timeline, { year: "", title: "", company: "", desc: "" }],
+      timeline: [...prev.timeline, { year: "", startYear: "", endYear: "", title: "", company: "", desc: "", experienceDetails: [] }],
     }));
   };
 
@@ -1720,23 +1813,41 @@ const AdminDashboard = () => {
       setEditingService(service);
       setServiceForm({
         icon: service.icon,
+        serviceCategory: service.serviceCategory || "",
         title: service.title,
+        price: service.price,
         description: service.description,
         features: service.features.join("\n"),
-        price: service.price,
+        deliverables: service.deliverables?.join("\n") || "",
+        timeline: service.timeline || "",
+        tools: service.tools || "",
+        idealFor: service.idealFor || "",
         ctaLabel: service.ctaLabel || "",
         ctaUrl: service.ctaUrl || "",
+        badge: service.badge || "",
+        rating: service.rating || 5,
+        testimonials: service.testimonials || "",
+        faq: service.faq || "",
       });
     } else {
       setEditingService(null);
       setServiceForm({
         icon: "Briefcase",
+        serviceCategory: "",
         title: "",
+        price: "",
         description: "",
         features: "",
-        price: "",
+        deliverables: "",
+        timeline: "",
+        tools: "",
+        idealFor: "",
         ctaLabel: "",
         ctaUrl: "",
+        badge: "",
+        rating: 5,
+        testimonials: "",
+        faq: "",
       });
     }
     setIsServiceDialogOpen(true);
@@ -1756,30 +1867,52 @@ const AdminDashboard = () => {
       .split("\n")
       .map((f) => f.trim())
       .filter((f) => f.length > 0);
+    const deliverablesArray = serviceForm.deliverables
+      .split("\n")
+      .map((d) => d.trim())
+      .filter((d) => d.length > 0);
 
     setIsSavingService(true);
     try {
       if (editingService) {
         await updateDoc(doc(db, "services", editingService.id), {
           icon: serviceForm.icon,
+          serviceCategory: serviceForm.serviceCategory.trim() || undefined,
           title: serviceForm.title.trim(),
+          price: serviceForm.price.trim() || undefined,
           description: serviceForm.description.trim(),
           features: featuresArray,
-          price: serviceForm.price.trim() || undefined,
+          deliverables: deliverablesArray.length > 0 ? deliverablesArray : undefined,
+          timeline: serviceForm.timeline.trim() || undefined,
+          tools: serviceForm.tools.trim() || undefined,
+          idealFor: serviceForm.idealFor.trim() || undefined,
           ctaLabel: serviceForm.ctaLabel.trim() || undefined,
           ctaUrl: serviceForm.ctaUrl.trim() || undefined,
+          badge: serviceForm.badge.trim() || undefined,
+          rating: serviceForm.rating || undefined,
+          testimonials: serviceForm.testimonials.trim() || undefined,
+          faq: serviceForm.faq.trim() || undefined,
           updatedAt: serverTimestamp(),
         });
         toast({ title: "Service updated" });
       } else {
         await addDoc(collection(db, "services"), {
           icon: serviceForm.icon,
+          serviceCategory: serviceForm.serviceCategory.trim() || undefined,
           title: serviceForm.title.trim(),
+          price: serviceForm.price.trim() || undefined,
           description: serviceForm.description.trim(),
           features: featuresArray,
-          price: serviceForm.price.trim() || undefined,
+          deliverables: deliverablesArray.length > 0 ? deliverablesArray : undefined,
+          timeline: serviceForm.timeline.trim() || undefined,
+          tools: serviceForm.tools.trim() || undefined,
+          idealFor: serviceForm.idealFor.trim() || undefined,
           ctaLabel: serviceForm.ctaLabel.trim() || undefined,
           ctaUrl: serviceForm.ctaUrl.trim() || undefined,
+          badge: serviceForm.badge.trim() || undefined,
+          rating: serviceForm.rating || undefined,
+          testimonials: serviceForm.testimonials.trim() || undefined,
+          faq: serviceForm.faq.trim() || undefined,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -3350,12 +3483,30 @@ id, name, salary
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Description</Label>
+                <Label>1-Line Summary (for card display)</Label>
                 <Textarea
                   value={caseStudyForm.description}
                   onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, description: e.target.value }))}
+                  rows={2}
+                  placeholder="Predicting accurate used car prices using machine learning regression models."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Problem Statement</Label>
+                <Textarea
+                  value={caseStudyForm.problemStatement}
+                  onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, problemStatement: e.target.value }))}
                   rows={3}
-                  placeholder="Short overview of the case study."
+                  placeholder="Used car prices vary significantly with age, mileage, brand, and fuel type..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Overview / Description (Full)</Label>
+                <Textarea
+                  value={caseStudyForm.overview}
+                  onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, overview: e.target.value }))}
+                  rows={4}
+                  placeholder="A regression-based ML solution built using Python and Scikit-Learn..."
                 />
               </div>
               <div className="grid md:grid-cols-2 gap-4">
@@ -3396,7 +3547,23 @@ id, name, salary
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>PDF URL</Label>
+                  <Label>Demo URL</Label>
+                  <Input
+                    value={caseStudyForm.demoUrl}
+                    onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, demoUrl: e.target.value }))}
+                    placeholder="https://"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>GitHub URL</Label>
+                  <Input
+                    value={caseStudyForm.githubUrl}
+                    onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, githubUrl: e.target.value }))}
+                    placeholder="https://"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>PDF Report URL</Label>
                   <Input
                     value={caseStudyForm.pdfUrl}
                     onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, pdfUrl: e.target.value }))}
@@ -3411,6 +3578,40 @@ id, name, salary
                     placeholder="https://"
                   />
                 </div>
+              </div>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Time to Build</Label>
+                  <Input
+                    value={caseStudyForm.timeToBuild}
+                    onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, timeToBuild: e.target.value }))}
+                    placeholder="4 days"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Difficulty Level</Label>
+                  <Input
+                    value={caseStudyForm.difficultyLevel}
+                    onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, difficultyLevel: e.target.value }))}
+                    placeholder="Intermediate"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Badge</Label>
+                  <Input
+                    value={caseStudyForm.badge}
+                    onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, badge: e.target.value }))}
+                    placeholder="Deployed App Available"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Tech Stack Icons (comma separated)</Label>
+                <Input
+                  value={caseStudyForm.techStackIcons}
+                  onChange={(e) => setCaseStudyForm((prev) => ({ ...prev, techStackIcons: e.target.value }))}
+                  placeholder="Python, Scikit-Learn, Streamlit"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Cover Emoji (optional)</Label>
@@ -3490,14 +3691,84 @@ id, name, salary
                 />
               </div>
               <div className="space-y-2">
-                  <Label>Description *</Label>
+                  <Label>Short Description (1–2 lines) *</Label>
                 <Textarea
                     rows={2}
                   value={projectForm.description}
                   onChange={(e) => setProjectForm((prev) => ({ ...prev, description: e.target.value }))}
-                    placeholder="Brief description..."
+                    placeholder="A Streamlit-powered app that predicts used car prices..."
                 />
               </div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Main Category</Label>
+                  <Input
+                    value={projectForm.mainCategory}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, mainCategory: e.target.value }))}
+                    placeholder="ML, Python, NLP, SQL, Automation, Dashboards, Web App"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Key Feature / Highlight</Label>
+                  <Input
+                    value={projectForm.keyFeature}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, keyFeature: e.target.value }))}
+                    placeholder="Runs in real time, 98% accuracy, etc."
+                  />
+                </div>
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Demo URL</Label>
+                  <Input
+                    value={projectForm.demoUrl}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, demoUrl: e.target.value }))}
+                    placeholder="https://"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>GitHub URL</Label>
+                  <Input
+                    value={projectForm.githubUrl}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, githubUrl: e.target.value }))}
+                    placeholder="https://"
+                  />
+                </div>
+              </div>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Thumbnail Emoji</Label>
+                  <Input
+                    value={projectForm.thumbnailEmoji}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, thumbnailEmoji: e.target.value }))}
+                    placeholder="🚗💡"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Difficulty Level</Label>
+                  <Input
+                    value={projectForm.difficultyLevel}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, difficultyLevel: e.target.value }))}
+                    placeholder="Intermediate"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Time to Build</Label>
+                  <Input
+                    value={projectForm.timeToBuild}
+                    onChange={(e) => setProjectForm((prev) => ({ ...prev, timeToBuild: e.target.value }))}
+                    placeholder="2 days"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Tech Stack Icons (comma separated)</Label>
+                <Input
+                  value={projectForm.techStackIcons}
+                  onChange={(e) => setProjectForm((prev) => ({ ...prev, techStackIcons: e.target.value }))}
+                  placeholder="Python, Scikit-Learn, Streamlit"
+                />
               </div>
 
               {/* Multiple Google Drive Links */}
@@ -4158,9 +4429,19 @@ id, name, salary
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Input
-                  placeholder="Year (e.g. 2024)"
+                  placeholder="Year (e.g. 2024) - Legacy field"
                   value={item.year}
                   onChange={(e) => updateTimelineItem(index, "year", e.target.value)}
+                />
+                <Input
+                  placeholder="Start Year (e.g. 2024)"
+                  value={item.startYear || ""}
+                  onChange={(e) => updateTimelineItem(index, "startYear", e.target.value)}
+                />
+                <Input
+                  placeholder="End Year (e.g. present or 2025)"
+                  value={item.endYear || ""}
+                  onChange={(e) => updateTimelineItem(index, "endYear", e.target.value)}
                 />
                 <Input
                   placeholder="Title (e.g. Senior Data Scientist)"
@@ -4172,10 +4453,27 @@ id, name, salary
                   value={item.company}
                   onChange={(e) => updateTimelineItem(index, "company", e.target.value)}
                 />
-                <Input
+                <Textarea
                   placeholder="Description"
                   value={item.desc}
                   onChange={(e) => updateTimelineItem(index, "desc", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm">Experience Details (one per line, bullet points)</Label>
+                <Textarea
+                  placeholder="Enter experience details, one per line:&#10;• Leading ML initiatives&#10;• Building predictive models&#10;• Mentoring team members"
+                  value={item.experienceDetails?.join("\n") || ""}
+                  onChange={(e) => {
+                    const details = e.target.value.split("\n").filter(line => line.trim());
+                    setAboutForm((prev) => ({
+                      ...prev,
+                      timeline: prev.timeline.map((itm, i) =>
+                        i === index ? { ...itm, experienceDetails: details } : itm
+                      ),
+                    }));
+                  }}
+                  rows={4}
                 />
               </div>
             </div>

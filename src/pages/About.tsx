@@ -13,9 +13,12 @@ type AboutContent = {
   skills: string[];
   timeline: {
     year: string;
+    startYear?: string;
+    endYear?: string;
     title: string;
     company: string;
     desc: string;
+    experienceDetails?: string[]; // Bullet points for experience details
   }[];
   achievements: {
     icon: string;
@@ -47,10 +50,10 @@ Through bytes_of_data, I combine my industry experience with my passion for teac
     "Data Visualization", "Statistical Analysis", "Big Data", "Cloud Computing"
   ],
   timeline: [
-    { year: "2024", title: "Senior Data Scientist", company: "Tech Corp", desc: "Leading ML initiatives" },
-    { year: "2022", title: "Data Scientist", company: "Analytics Inc", desc: "Built predictive models" },
-    { year: "2020", title: "Data Analyst", company: "DataCo", desc: "Started data science journey" },
-    { year: "2019", title: "Graduate", company: "University", desc: "Computer Science degree" },
+    { year: "2024", startYear: "2024", endYear: "present", title: "Senior Data Scientist", company: "Tech Corp", desc: "Leading ML initiatives", experienceDetails: ["Leading ML initiatives", "Building predictive models", "Mentoring team members"] },
+    { year: "2022", startYear: "2022", endYear: "2024", title: "Data Scientist", company: "Analytics Inc", desc: "Built predictive models", experienceDetails: ["Built predictive models", "Developed ML pipelines", "Collaborated with cross-functional teams"] },
+    { year: "2020", startYear: "2020", endYear: "2022", title: "Data Analyst", company: "DataCo", desc: "Started data science journey", experienceDetails: ["Started data science journey", "Performed data analysis", "Created dashboards"] },
+    { year: "2019", startYear: "2019", endYear: "2020", title: "Graduate", company: "University", desc: "Computer Science degree", experienceDetails: ["Computer Science degree", "Specialized in Machine Learning", "Graduated with honors"] },
   ],
   achievements: [
     { icon: "Award", value: "500+", label: "Students Mentored" },
@@ -75,7 +78,12 @@ const About = () => {
             avatarUrl: data.avatarUrl,
             story: data.story || defaultContent.story,
             skills: data.skills?.length > 0 ? data.skills : defaultContent.skills,
-            timeline: data.timeline?.length > 0 ? data.timeline : defaultContent.timeline,
+            timeline: data.timeline?.length > 0 ? data.timeline.map((item: any) => ({
+              ...item,
+              startYear: item.startYear || item.year,
+              endYear: item.endYear || (item.year ? undefined : "present"),
+              experienceDetails: item.experienceDetails || [],
+            })) : defaultContent.timeline,
             achievements: data.achievements?.length > 0 ? data.achievements : defaultContent.achievements,
           });
         }
@@ -164,22 +172,37 @@ const About = () => {
               </span>
             </h2>
             <div className="max-w-3xl mx-auto space-y-6">
-              {content.timeline.map((item, index) => (
-                <GlassCard key={index} className="relative">
-                  <div className="flex items-start gap-6">
-                    <div className="flex-shrink-0">
-                      <div className="w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center font-bold text-sm">
-                        {item.year}
+              {content.timeline.map((item, index) => {
+                const timeDuration = item.startYear && item.endYear 
+                  ? `${item.startYear} ${item.endYear === "present" ? "to present" : `to ${item.endYear}`}`
+                  : item.year;
+                return (
+                  <GlassCard key={index} className="relative">
+                    <div className="flex items-start gap-6">
+                      <div className="flex-shrink-0">
+                        <div className="w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center font-bold text-xs text-center px-2">
+                          {timeDuration}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold mb-1">{item.title}</h3>
+                        <p className="text-primary mb-2">{item.company}</p>
+                        <p className="text-muted-foreground mb-3">{item.desc}</p>
+                        {item.experienceDetails && item.experienceDetails.length > 0 && (
+                          <ul className="space-y-1.5 mt-3">
+                            {item.experienceDetails.map((detail, idx) => (
+                              <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
+                                <span className="text-primary mt-1">•</span>
+                                <span>{detail}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                     </div>
-                    <div className="flex-1">
-                      <h3 className="text-xl font-bold mb-1">{item.title}</h3>
-                      <p className="text-primary mb-2">{item.company}</p>
-                      <p className="text-muted-foreground">{item.desc}</p>
-                    </div>
-                  </div>
-                </GlassCard>
-              ))}
+                  </GlassCard>
+                );
+              })}
             </div>
           </div>
         )}

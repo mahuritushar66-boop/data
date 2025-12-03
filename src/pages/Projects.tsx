@@ -11,10 +11,18 @@ type ProjectResource = {
   id: string;
   title: string;
   description: string;
+  techStackIcons?: string;
+  mainCategory?: string;
+  keyFeature?: string;
+  demoUrl?: string;
+  githubUrl?: string;
+  thumbnailEmoji?: string;
+  difficultyLevel?: string;
+  timeToBuild?: string;
+  // Legacy fields
   imageUrls?: string[];
   pdfUrls?: string[];
   driveLinks?: string[];
-  // Legacy fields
   imageUrl?: string;
   driveLink?: string;
 };
@@ -36,6 +44,14 @@ const Projects = () => {
               id: doc.id,
               title: data.title || "Untitled Project",
               description: data.description || "",
+              techStackIcons: data.techStackIcons,
+              mainCategory: data.mainCategory,
+              keyFeature: data.keyFeature,
+              demoUrl: data.demoUrl,
+              githubUrl: data.githubUrl,
+              thumbnailEmoji: data.thumbnailEmoji,
+              difficultyLevel: data.difficultyLevel,
+              timeToBuild: data.timeToBuild,
               imageUrls: data.imageUrls || [],
               pdfUrls: data.pdfUrls || [],
               driveLinks: data.driveLinks || [],
@@ -87,93 +103,79 @@ const Projects = () => {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => {
-              // Handle both new array fields and legacy single fields
-              const images = project.imageUrls?.length ? project.imageUrls : (project.imageUrl ? [project.imageUrl] : []);
-              const pdfs = project.pdfUrls || [];
-              const links = project.driveLinks?.length ? project.driveLinks : (project.driveLink ? [project.driveLink] : []);
+              const techStack = project.techStackIcons 
+                ? project.techStackIcons.split(",").map((item: string) => item.trim())
+                : [];
+              const primaryUrl = project.demoUrl || project.githubUrl || (project.driveLinks?.[0] || project.driveLink);
               
               return (
                 <GlassCard 
                   key={project.id} 
-                  className="flex flex-col overflow-hidden hover:border-primary/50 transition-all duration-300 hover:shadow-lg group"
+                  className="flex flex-col overflow-hidden hover:border-primary/50 transition-all duration-300 hover:shadow-lg"
                 >
-                  {/* Project Image */}
-                  {images.length > 0 ? (
-                    <div className="aspect-video w-full overflow-hidden bg-muted/30 relative">
-                      <img 
-                        src={images[0]} 
-                        alt={project.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                      {images.length > 1 && (
-                        <Badge className="absolute top-2 right-2 bg-black/50 text-white">
-                          <ImageIcon className="h-3 w-3 mr-1" />
-                          {images.length}
-                        </Badge>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="aspect-video w-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                      <FolderOpen className="h-16 w-16 text-primary/40" />
+                  {/* Thumbnail / Emoji */}
+                  <div className="text-4xl mb-3">{project.thumbnailEmoji || "💡"}</div>
+                  
+                  {/* Title */}
+                  <h3 className="text-xl font-bold mb-2 line-clamp-2">{project.title}</h3>
+                  
+                  {/* Short Description */}
+                  <p className="text-muted-foreground text-sm flex-1 line-clamp-2 mb-3">
+                    {project.description}
+                  </p>
+                  
+                  {/* Key Feature */}
+                  {project.keyFeature && (
+                    <div className="mb-3">
+                      <Badge variant="secondary" className="text-xs font-semibold bg-primary/20 text-primary">
+                        {project.keyFeature}
+                      </Badge>
                     </div>
                   )}
                   
-                  {/* Project Content */}
-                  <div className="flex flex-col flex-1 p-5">
-                    <h3 className="text-xl font-bold mb-2 line-clamp-2">{project.title}</h3>
-                    <p className="text-muted-foreground text-sm flex-1 line-clamp-3 mb-4">
-                      {project.description}
-                    </p>
-                    
-                    {/* Resource badges */}
-                    {(pdfs.length > 0 || images.length > 1) && (
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        {pdfs.length > 0 && (
-                          <Badge variant="secondary" className="gap-1">
-                            <FileText className="h-3 w-3" />
-                            {pdfs.length} PDF{pdfs.length > 1 ? "s" : ""}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Download Buttons */}
-                    <div className="space-y-2">
-                      {links.map((link, idx) => (
-                        <Button 
-                          key={idx}
-                          asChild 
-                          className={`w-full gap-2 ${idx === 0 ? 'bg-gradient-primary hover:shadow-glow-primary' : 'bg-secondary hover:bg-secondary/80'}`}
-                          variant={idx === 0 ? "default" : "secondary"}
-                        >
-                          <a href={link} target="_blank" rel="noopener noreferrer">
-                            <Download className="h-4 w-4" />
-                            {links.length > 1 ? `Download ${idx + 1}` : "Download"}
-                          </a>
-                        </Button>
+                  {/* Tech Stack Icons */}
+                  {techStack.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-1 text-xs">
+                      {techStack.map((tech, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {tech}
+                        </Badge>
                       ))}
-                      
-                      {/* PDF Links */}
-                      {pdfs.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {pdfs.map((pdf, idx) => (
-                            <Button 
-                              key={idx}
-                              asChild 
-                              variant="outline"
-                              size="sm"
-                              className="gap-1"
-                            >
-                              <a href={pdf} target="_blank" rel="noopener noreferrer">
-                                <FileText className="h-3 w-3" />
-                                PDF {pdfs.length > 1 ? idx + 1 : ""}
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </Button>
-                          ))}
-                        </div>
-                      )}
                     </div>
+                  )}
+                  
+                  {/* Difficulty + Time */}
+                  {(project.difficultyLevel || project.timeToBuild) && (
+                    <div className="mb-3 text-xs text-muted-foreground">
+                      {project.difficultyLevel && project.timeToBuild 
+                        ? `${project.difficultyLevel} • ${project.timeToBuild}`
+                        : project.difficultyLevel || project.timeToBuild}
+                    </div>
+                  )}
+                  
+                  {/* Button */}
+                  <div className="mt-auto pt-3">
+                    {primaryUrl ? (
+                      <Button 
+                        asChild 
+                        className="w-full bg-gradient-primary gap-2" 
+                        size="sm"
+                      >
+                        <a href={primaryUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                          {project.demoUrl ? "Open Demo" : project.githubUrl ? "View on GitHub" : "View Project"}
+                        </a>
+                      </Button>
+                    ) : (
+                      <Button 
+                        className="w-full bg-gradient-primary gap-2" 
+                        size="sm"
+                        disabled
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        View Project
+                      </Button>
+                    )}
                   </div>
                 </GlassCard>
               );

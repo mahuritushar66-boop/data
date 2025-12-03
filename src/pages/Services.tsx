@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
@@ -10,12 +11,21 @@ import { Link } from "react-router-dom";
 type Service = {
   id: string;
   icon: string;
+  serviceCategory?: string;
   title: string;
+  price: string;
   description: string;
   features: string[];
-  price: string;
+  deliverables?: string[];
+  timeline?: string;
+  tools?: string;
+  idealFor?: string;
   ctaLabel?: string;
   ctaUrl?: string;
+  badge?: string;
+  rating?: number;
+  testimonials?: string;
+  faq?: string;
 };
 
 // Icon mapping
@@ -50,12 +60,21 @@ const Services = () => {
             return {
               id: doc.id,
               icon: data.icon || "Briefcase",
+              serviceCategory: data.serviceCategory,
               title: data.title || "Untitled Service",
+              price: data.price || "",
               description: data.description || "",
               features: Array.isArray(data.features) ? data.features : [],
-              price: data.price || "",
+              deliverables: Array.isArray(data.deliverables) ? data.deliverables : [],
+              timeline: data.timeline,
+              tools: data.tools,
+              idealFor: data.idealFor,
               ctaLabel: data.ctaLabel || "Get Started",
               ctaUrl: data.ctaUrl,
+              badge: data.badge,
+              rating: data.rating || 5,
+              testimonials: data.testimonials,
+              faq: data.faq,
             } as Service;
           }),
         );
@@ -102,25 +121,59 @@ const Services = () => {
           <div className="grid lg:grid-cols-3 gap-8 mb-16">
             {services.map((service) => {
               const Icon = iconMap[service.icon] || Briefcase;
+              const rating = service.rating || 5;
+              const stars = "★".repeat(rating) + "☆".repeat(5 - rating);
+              
               return (
                 <GlassCard key={service.id} className="flex flex-col h-full">
+                  {/* Icon */}
                   <div className="inline-flex p-4 bg-gradient-primary rounded-full mb-4 w-fit">
                     <Icon className="h-8 w-8 text-primary-foreground" />
                   </div>
-                  <h3 className="text-2xl font-bold mb-3">{service.title}</h3>
-                  <p className="text-muted-foreground mb-6">{service.description}</p>
-                  <ul className="space-y-2 mb-6 flex-grow">
-                    {service.features.map((feature, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm">
-                        <span className="text-primary mt-1">✓</span>
-                        <span className="text-muted-foreground">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="border-t border-border pt-4">
-                    {service.price && (
-                      <p className="text-lg font-semibold text-primary mb-4">{service.price}</p>
-                    )}
+                  
+                  {/* Title */}
+                  <h3 className="text-2xl font-bold mb-2">{service.title}</h3>
+                  
+                  {/* Short Description */}
+                  <p className="text-muted-foreground mb-4 line-clamp-2">{service.description}</p>
+                  
+                  {/* Key Highlights (Features) */}
+                  <div className="mb-4 flex-grow">
+                    <h4 className="text-sm font-semibold mb-2 text-primary">Key Highlights:</h4>
+                    <ul className="space-y-1.5">
+                      {service.features.slice(0, 4).map((feature, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm">
+                          <span className="text-primary mt-0.5">•</span>
+                          <span className="text-muted-foreground">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  
+                  {/* Price */}
+                  {service.price && (
+                    <div className="mb-3">
+                      <p className="text-lg font-semibold text-primary">{service.price}</p>
+                    </div>
+                  )}
+                  
+                  {/* Badge */}
+                  {service.badge && (
+                    <div className="mb-3">
+                      <Badge variant="outline" className="text-xs">
+                        ⭐ {service.badge}
+                      </Badge>
+                    </div>
+                  )}
+                  
+                  {/* Rating */}
+                  <div className="mb-4 text-sm text-muted-foreground">
+                    <span className="text-yellow-500">{stars}</span>
+                    <span className="ml-2">({rating}/5)</span>
+                  </div>
+                  
+                  {/* Buttons */}
+                  <div className="border-t border-border pt-4 space-y-2">
                     {service.ctaUrl ? (
                       <Button
                         asChild
@@ -135,6 +188,19 @@ const Services = () => {
                         {service.ctaLabel || "Get Started"}
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        // You can add a modal or expandable section for "See Details"
+                        toast({
+                          title: service.title,
+                          description: service.description,
+                        });
+                      }}
+                    >
+                      See Details
+                    </Button>
                   </div>
                 </GlassCard>
               );
