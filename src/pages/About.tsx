@@ -17,6 +17,7 @@ type AboutContent = {
     endYear?: string;
     title: string;
     company: string;
+    companyUrl?: string; // Optional company URL
     desc: string;
     experienceDetails?: string[]; // Bullet points for experience details
   }[];
@@ -173,20 +174,22 @@ const About = () => {
             </h2>
             <div className="max-w-3xl mx-auto space-y-6">
               {content.timeline.map((item, index) => {
-                const timeDuration = item.startYear && item.endYear 
-                  ? `${item.startYear} ${item.endYear === "present" ? "to present" : `to ${item.endYear}`}`
-                  : item.year;
                 return (
                   <GlassCard key={index} className="relative">
-                    <div className="flex items-start gap-6">
-                      <div className="flex-shrink-0">
-                        <div className="w-16 h-16 bg-gradient-primary rounded-full flex items-center justify-center font-bold text-xs text-center px-2">
-                          {timeDuration}
-                        </div>
-                      </div>
-                      <div className="flex-1">
+                    <div>
                         <h3 className="text-xl font-bold mb-1">{item.title}</h3>
-                        <p className="text-primary mb-2">{item.company}</p>
+                        {item.companyUrl ? (
+                          <a 
+                            href={item.companyUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-primary mb-2 hover:underline inline-block"
+                          >
+                            {item.company}
+                          </a>
+                        ) : (
+                          <p className="text-primary mb-2">{item.company}</p>
+                        )}
                         <p className="text-muted-foreground mb-3">{item.desc}</p>
                         {item.experienceDetails && item.experienceDetails.length > 0 && (
                           <ul className="space-y-1.5 mt-3">
@@ -198,7 +201,6 @@ const About = () => {
                             ))}
                           </ul>
                         )}
-                      </div>
                     </div>
                   </GlassCard>
                 );

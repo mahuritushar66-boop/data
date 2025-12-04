@@ -174,8 +174,8 @@ const renderQuestionContent = (questionText: string, sqlTableNames?: string) => 
     } else {
       // Second priority: Try to get table name from JSON
       rawName =
-        (typeof data?.tableName === "string" && data.tableName.trim()) ||
-        (typeof data?.name === "string" && data.name.trim());
+      (typeof data?.tableName === "string" && data.tableName.trim()) ||
+      (typeof data?.name === "string" && data.name.trim());
       
       if (!rawName && mentionedTables.length > 0) {
         // Third priority: Use mentioned tables from question text

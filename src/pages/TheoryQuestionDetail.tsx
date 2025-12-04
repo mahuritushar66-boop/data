@@ -37,6 +37,7 @@ type TheoryQuestion = {
   hint?: string;
   imageUrls?: string[];
   pdfUrl?: string;
+  answerText?: string; // Text answer in case PDF is not available
   company?: string;
   difficulty?: "easy" | "medium" | "hard";
   createdAt?: Date;
@@ -91,6 +92,7 @@ const TheoryQuestionDetail = () => {
           hint: data.hint,
           imageUrls: data.imageUrls || [],
           pdfUrl: data.pdfUrl,
+          answerText: data.answerText,
           company: data.company,
           difficulty: data.difficulty,
           createdAt: data.createdAt?.toDate?.(),
@@ -298,10 +300,11 @@ const TheoryQuestionDetail = () => {
 
   const hasImages = question.imageUrls && question.imageUrls.length > 0;
   const hasPdf = Boolean(question.pdfUrl);
+  const hasAnswerText = Boolean(question.answerText);
 
 
   return (
-    <div className="min-h-screen pb-20 pt-16">
+    <div className="min-h-screen pb-20 pt-5">
       {/* Background decorations */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-72 h-72 bg-primary/5 rounded-full blur-3xl" />
@@ -390,7 +393,7 @@ const TheoryQuestionDetail = () => {
                 variant="outline"
                 size="sm"
                 onClick={startTimer}
-                className="gap-1.5 px-3 py-1 text-sm font-medium border-blue-500/60 text-blue-400 bg-blue-500/15 hover:bg-blue-500/15 hover:border-blue-500/60"
+                className="gap-1.5 px-3 py-1 text-sm font-medium border-blue-500/60 text-blue-400 bg-blue-500/15 hover:bg-blue-500/15 hover:border-blue-500/60 hover:text-blue-400"
               >
                 <Clock className="h-3.5 w-3.5" />
                 Start Timer ({formatTime(getTimeForDifficulty(question.difficulty))})
@@ -410,6 +413,19 @@ const TheoryQuestionDetail = () => {
                 {formatTime(timeRemaining)}
               </Badge>
             ) : null}
+            
+            {/* Mark as Completed Button - Moved to header next to timer */}
+            {!isCompleted && currentUser && (
+              <Button
+                onClick={markAsCompleted}
+                size="sm"
+                className="gap-1.5 px-3 py-1 text-sm font-medium bg-green-500 hover:bg-green-600 text-white"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Mark as Completed
+              </Button>
+            )}
+            
             {isCompleted && (
               <Badge 
                 variant="default" 
@@ -428,73 +444,18 @@ const TheoryQuestionDetail = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Side: Question and Images */}
           <div className="space-y-6">
-            {/* Question Section */}
-            <div className="space-y-6">
-              {/* Question Text */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  <span>Question</span>
-                </div>
-                <div className="text-lg md:text-xl leading-relaxed whitespace-pre-wrap text-foreground/90">
-                  {question.question}
-                </div>
+            {/* Question Text */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span>Question</span>
               </div>
-
-              {/* Hint Section */}
-              {question.hint && (
-                <div className="pt-4 border-t border-border/50">
-                  <Button
-                    variant={showHint ? "secondary" : "outline"}
-                    onClick={() => setShowHint(!showHint)}
-                    className="gap-2 transition-all duration-300"
-                  >
-                    {showHint ? (
-                      <>
-                        <EyeOff className="h-4 w-4" />
-                        Hide Hint
-                      </>
-                    ) : (
-                      <>
-                        <Lightbulb className="h-4 w-4 text-yellow-500" />
-                        Show Hint
-                      </>
-                    )}
-                  </Button>
-                  
-                  <div className={`overflow-hidden transition-all duration-500 ease-out ${
-                    showHint ? "max-h-[500px] opacity-100 mt-4" : "max-h-0 opacity-0"
-                  }`}>
-                    <div className="p-4 md:p-5 bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-lg bg-yellow-500/20">
-                          <Lightbulb className="h-5 w-5 text-yellow-500" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400 mb-2">Hint</p>
-                          <p className="text-sm md:text-base leading-relaxed">{question.hint}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Mark as Completed Button */}
-              {!isCompleted && currentUser && (
-                <div className="pt-4 border-t border-border/50">
-                  <Button
-                    onClick={markAsCompleted}
-                    className="gap-2 bg-green-500 hover:bg-green-600 text-white"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Mark as Completed
-                  </Button>
-                </div>
-              )}
+              <div className="text-lg md:text-xl leading-relaxed whitespace-pre-wrap text-foreground/90">
+                {question.question}
+              </div>
             </div>
 
-            {/* Images Section */}
+            {/* Images Section - Moved under question */}
             {hasImages && (
               <div className="space-y-5">
                 <div className="flex items-center justify-between">
@@ -580,25 +541,74 @@ const TheoryQuestionDetail = () => {
                 )}
               </div>
             )}
+
+            {/* Hint Section - Moved to bottom of images */}
+            {question.hint && (
+              <div className="pt-4 border-t border-border/50">
+                <Button
+                  variant={showHint ? "secondary" : "outline"}
+                  onClick={() => setShowHint(!showHint)}
+                  className="gap-2 transition-all duration-300"
+                >
+                  {showHint ? (
+                    <>
+                      <EyeOff className="h-4 w-4" />
+                      Hide Hint
+                    </>
+                  ) : (
+                    <>
+                      <Lightbulb className="h-4 w-4 text-yellow-500" />
+                      Show Hint
+                    </>
+                  )}
+                </Button>
+                
+                <div className={`overflow-hidden transition-all duration-500 ease-out ${
+                  showHint ? "max-h-[500px] opacity-100 mt-4" : "max-h-0 opacity-0"
+                }`}>
+                  <div className="p-4 md:p-5 bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-yellow-500/20">
+                        <Lightbulb className="h-5 w-5 text-yellow-500" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400 mb-2">Hint</p>
+                        <p className="text-sm md:text-base leading-relaxed">{question.hint}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Right Side: PDF Viewer */}
-          {hasPdf && (
+          {/* Right Side: PDF Viewer or Answer Text */}
+          {(hasPdf || hasAnswerText) && (
             <div className="lg:sticky lg:top-24 lg:self-start">
               <div className="flex flex-col h-[calc(100vh-180px)] min-h-[700px] max-h-[900px]">
                 <div className="flex items-center gap-3 flex-shrink-0 mb-5">
                   <div className="p-2 rounded-lg bg-red-500/10">
                     <FileText className="h-5 w-5 text-red-500" />
                   </div>
-                  <h2 className="text-xl font-semibold">Document</h2>
+                  <h2 className="text-xl font-semibold">{hasPdf ? "Document" : "Answer"}</h2>
                 </div>
                 
                 <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-                  <PdfViewer 
-                    url={question.pdfUrl!} 
-                    title={`${question.module} Question Document`}
-                    height="calc(100vh - 350px)"
-                  />
+                  {hasPdf ? (
+                    <PdfViewer 
+                      url={question.pdfUrl!} 
+                      title={`${question.module} Question Document`}
+                      height="calc(100vh - 350px)"
+                    />
+                  ) : hasAnswerText ? (
+                    <div className="flex-1 overflow-y-auto bg-muted/30 rounded-lg p-6 border border-border">
+                      <div className="prose prose-sm max-w-none dark:prose-invert">
+                        <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
+                          {question.answerText}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

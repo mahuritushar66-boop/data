@@ -621,7 +621,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             pyodidePackagesLoaded.current = new Set(["numpy", "pandas"]);
           } catch (pkgError) {
             console.warn("Could not pre-load packages:", pkgError);
-            pyodidePackagesLoaded.current = new Set();
+          pyodidePackagesLoaded.current = new Set();
           }
           
           setPyodide(pyodideInstance);
@@ -650,15 +650,15 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
     let cancelled = false;
 
     const loadSqlJs = async () => {
-      try {
+        try {
         toast({
           title: "Loading SQL environment...",
           description: "Setting up the database engine.",
         });
         
-        const SQL = await initSqlJs({
-          locateFile: (file) => `https://sql.js.org/dist/${file}`,
-        });
+          const SQL = await initSqlJs({
+            locateFile: (file) => `https://sql.js.org/dist/${file}`,
+          });
         
         if (!cancelled) {
           setSqlJs(SQL);
@@ -1201,15 +1201,15 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
           // Fallback to SQLite (either CORS blocked or OneCompiler error)
           const isCorsFallback = onlineError.message === "FALLBACK_TO_SQLITE";
           
-          if (!db) {
-            toast({
+        if (!db) {
+          toast({
               title: "SQL environment loading...",
               description: "Please wait for the database to initialize.",
-              variant: "destructive",
-            });
-            setLoading(false);
-            return;
-          }
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
 
           if (isCorsFallback) {
             toast({
@@ -1223,33 +1223,33 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             });
           }
 
-          // Split by semicolons to handle multiple queries
-          const queries = executableCode
-            .split(";")
-            .map((q) => q.trim())
-            .filter((q) => q.length > 0);
+        // Split by semicolons to handle multiple queries
+        const queries = executableCode
+          .split(";")
+          .map((q) => q.trim())
+          .filter((q) => q.length > 0);
 
-          if (queries.length === 0) {
-            toast({
-              title: "No valid query",
-              description: "Please write a valid SQL query.",
-              variant: "destructive",
-            });
-            setLoading(false);
-            return;
-          }
+        if (queries.length === 0) {
+          toast({
+            title: "No valid query",
+            description: "Please write a valid SQL query.",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
 
-          let lastSelectOutput: { columns: string[]; values: any[][] } | null = null;
+        let lastSelectOutput: { columns: string[]; values: any[][] } | null = null;
           const tableNames = availableTables;
 
-          for (const originalQuery of queries) {
-            let query = originalQuery;
+        for (const originalQuery of queries) {
+          let query = originalQuery;
 
-            tableNames.forEach((tableName) => {
-              const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-              const regex = new RegExp(`\\b${escapedTableName}\\b`, "gi");
-              query = query.replace(regex, `"${tableName}"`);
-            });
+          tableNames.forEach((tableName) => {
+            const escapedTableName = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const regex = new RegExp(`\\b${escapedTableName}\\b`, "gi");
+            query = query.replace(regex, `"${tableName}"`);
+          });
 
             query = query.replace(/`/g, '"');
 
@@ -1288,21 +1288,21 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
             query = query.replace(/\bUCASE\s*\(/gi, "UPPER(");
 
             try {
-              const isSelectQuery = isSelectLikeSql(query);
+          const isSelectQuery = isSelectLikeSql(query);
 
-              if (isSelectQuery) {
-                const resultSets = db.exec(query);
-                if (resultSets.length > 0) {
-                  const finalResult = resultSets[resultSets.length - 1];
-                  lastSelectOutput = {
-                    columns: finalResult.columns,
-                    values: finalResult.values,
-                  };
-                } else {
-                  lastSelectOutput = { columns: [], values: [] };
-                }
-              } else {
-                db.run(query);
+          if (isSelectQuery) {
+            const resultSets = db.exec(query);
+            if (resultSets.length > 0) {
+              const finalResult = resultSets[resultSets.length - 1];
+              lastSelectOutput = {
+                columns: finalResult.columns,
+                values: finalResult.values,
+              };
+            } else {
+              lastSelectOutput = { columns: [], values: [] };
+            }
+          } else {
+            db.run(query);
               }
             } catch (sqliteError: any) {
               const errorMsg = sqliteError.message || String(sqliteError);
@@ -1326,25 +1326,25 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
               });
               setLoading(false);
               return;
-            }
           }
+        }
 
-          if (lastSelectOutput) {
-            setOutput(lastSelectOutput);
-            setValidationResult(null);
-            toast({
+        if (lastSelectOutput) {
+          setOutput(lastSelectOutput);
+          setValidationResult(null);
+          toast({
               title: "Query executed (SQLite)",
-              description: `Returned ${lastSelectOutput.values.length} row(s).`,
-            });
-          } else {
-            setOutput({ columns: ["Status"], values: [["Query executed successfully"]] });
+            description: `Returned ${lastSelectOutput.values.length} row(s).`,
+          });
+        } else {
+          setOutput({ columns: ["Status"], values: [["Query executed successfully"]] });
             toast({ title: "Query executed" });
           }
         }
       } else if (language === "python") {
         // Try OneCompiler first, but it may be blocked by CORS
         // If blocked, automatically fallback to Pyodide (in-browser Python)
-        toast({
+          toast({
           title: "Executing Python...",
           description: "Trying OneCompiler, will use in-browser Python if unavailable...",
         });
@@ -1411,7 +1411,7 @@ del _temp_data
                 : table.tableName
             );
             
-            toast({
+          toast({
               title: "DataFrames loaded",
               description: `Available: ${finalTableNames.join(", ")}`,
             });
@@ -1423,8 +1423,8 @@ del _temp_data
             toast({
               title: "Note: Empty DataFrames",
               description: `Created: ${adminTableNamesList.join(", ")}. Data from question not parsed.`,
-              variant: "destructive",
-            });
+            variant: "destructive",
+          });
           }
 
           // Add user's code
@@ -1452,7 +1452,7 @@ del _temp_data
               const parsed = JSON.parse(expectedOutput);
               if (parsed && typeof parsed === 'object' && Array.isArray(parsed.columns) && Array.isArray(parsed.values)) {
                 expectsJsonOutput = true;
-              }
+        }
             }
           } catch {
             // Not JSON format
@@ -1633,24 +1633,24 @@ except:
           if (errorMsg === "FALLBACK_TO_PYODIDE" && pyodide) {
             try {
               // Use Pyodide as fallback
-              const packagesReady = await ensurePyodidePackages(executableCode);
-              if (!packagesReady) {
-                setLoading(false);
-                return;
-              }
+        const packagesReady = await ensurePyodidePackages(executableCode);
+        if (!packagesReady) {
+          setLoading(false);
+          return;
+        }
 
-              let outputText = "";
+        let outputText = "";
               let hasError = false;
               
               // Reset stdout/stderr capture
-              pyodide.runPython(`
+        pyodide.runPython(`
 import sys
 from io import StringIO
 sys.stdout = StringIO()
 sys.stderr = StringIO()
 `);
 
-              try {
+        try {
                 // Always import pandas and numpy
                 pyodide.runPython(`import pandas as pd\nimport numpy as np`);
                 
@@ -1699,10 +1699,10 @@ del _temp_data
                 }
 
                 // Execute user's Python code
-                pyodide.runPython(executableCode);
+          pyodide.runPython(executableCode);
                 
                 // Get output
-                outputText = pyodide.runPython("sys.stdout.getvalue()");
+          outputText = pyodide.runPython("sys.stdout.getvalue()");
                 const stderrOutput = pyodide.runPython("sys.stderr.getvalue()");
                 
                 // Check if expected output is JSON format (for DataFrame comparison)
@@ -1814,12 +1814,12 @@ except:
               }
               
               const finalOutput = outputText || "(No output - code ran but didn't print anything)";
-              setTextOutput(finalOutput);
+        setTextOutput(finalOutput);
               setOutput(structuredOutput);
-              setValidationResult(null);
+        setValidationResult(null);
               
               if (hasError) {
-                toast({
+        toast({
                   title: "Python Error",
                   description: "Check the output for details.",
                   variant: "destructive",
@@ -2133,7 +2133,7 @@ except:
             <div className="p-1.5 rounded-md bg-primary/10 border border-primary/20">
               <Code2 className="h-3.5 w-3.5 text-primary" />
             </div>
-            <span className="text-sm font-semibold text-foreground">
+            <span className="text-sm font-semibold text-foreground hover:text-foreground !text-foreground">
             {language.toUpperCase()} Editor
           </span>
           </div>

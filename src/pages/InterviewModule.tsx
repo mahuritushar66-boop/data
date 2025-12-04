@@ -386,7 +386,7 @@ const InterviewModule = () => {
     if (question.isTheory) {
       navigate(`/theory-question/${question.id}`);
     } else {
-      navigate(`/interview-prep/question/${question.id}`);
+    navigate(`/interview-prep/question/${question.id}`);
     }
   };
 

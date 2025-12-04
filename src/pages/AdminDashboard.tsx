@@ -165,6 +165,7 @@ type AboutContent = {
     endYear?: string;
     title: string;
     company: string;
+    companyUrl?: string; // Optional company URL
     desc: string;
     experienceDetails?: string[];
   }[];
@@ -207,6 +208,7 @@ type TheoryQuestion = {
   hint?: string;
   imageUrls?: string[];
   pdfUrl?: string;
+  answerText?: string; // Text answer in case PDF is not available
   company?: string;
   difficulty?: "easy" | "medium" | "hard";
   createdAt?: Date;
@@ -359,7 +361,7 @@ const AdminDashboard = () => {
     avatarUrl: "",
     story: "",
     skills: "",
-    timeline: [] as { year: string; startYear?: string; endYear?: string; title: string; company: string; desc: string; experienceDetails?: string[] }[],
+    timeline: [] as { year: string; startYear?: string; endYear?: string; title: string; company: string; companyUrl?: string; desc: string; experienceDetails?: string[] }[],
     achievements: [] as { icon: string; value: string; label: string }[],
   });
   const [aboutAvatarFile, setAboutAvatarFile] = useState<File | null>(null);
@@ -409,6 +411,7 @@ const AdminDashboard = () => {
     questionTitle: "",
     question: "",
     hint: "",
+    answerText: "",
     company: "",
     difficulty: "" as "" | "easy" | "medium" | "hard",
   });
@@ -1751,7 +1754,7 @@ const AdminDashboard = () => {
   const addTimelineItem = () => {
     setAboutForm((prev) => ({
       ...prev,
-      timeline: [...prev.timeline, { year: "", startYear: "", endYear: "", title: "", company: "", desc: "", experienceDetails: [] }],
+      timeline: [...prev.timeline, { year: "", startYear: "", endYear: "", title: "", company: "", companyUrl: "", desc: "", experienceDetails: [] }],
     }));
   };
 
@@ -2049,6 +2052,7 @@ const AdminDashboard = () => {
         questionTitle: theory.questionTitle || "",
         question: theory.question,
         hint: theory.hint || "",
+        answerText: theory.answerText || "",
         company: theory.company || "",
         difficulty: theory.difficulty || "",
       });
@@ -2059,6 +2063,7 @@ const AdminDashboard = () => {
         questionTitle: "",
         question: "",
         hint: "",
+        answerText: "",
         company: "",
         difficulty: "",
       });
@@ -2148,6 +2153,7 @@ const AdminDashboard = () => {
         questionTitle: theoryForm.questionTitle.trim() || null,
         question: theoryForm.question.trim(),
         hint: theoryForm.hint.trim() || null,
+        answerText: theoryForm.answerText.trim() || null,
         company: theoryForm.company.trim() || null,
         difficulty: theoryForm.difficulty || null,
         imageUrls,
@@ -3358,6 +3364,20 @@ id, name, salary
                 </p>
               </div>
               
+              <div className="space-y-2">
+                <Label>Answer Text (Optional - Use if PDF is not available)</Label>
+                <Textarea
+                  placeholder="Enter the answer text here. This will be displayed if no PDF is provided."
+                  value={theoryForm.answerText}
+                  onChange={(e) => setTheoryForm((prev) => ({ ...prev, answerText: e.target.value }))}
+                  rows={8}
+                  className="resize-none"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Provide either a PDF or answer text. If both are provided, PDF will be shown first.
+                </p>
+              </div>
+              
               <Button onClick={handleSaveTheory} disabled={isSavingTheory} className="w-full">
                 {isSavingTheory ? (
                   <>
@@ -3701,7 +3721,7 @@ id, name, salary
               </div>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="space-y-2">
                   <Label>Main Category</Label>
                   <Input
                     value={projectForm.mainCategory}
@@ -3715,7 +3735,7 @@ id, name, salary
                     value={projectForm.keyFeature}
                     onChange={(e) => setProjectForm((prev) => ({ ...prev, keyFeature: e.target.value }))}
                     placeholder="Runs in real time, 98% accuracy, etc."
-                  />
+                />
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
@@ -3815,7 +3835,7 @@ id, name, salary
               {/* Multiple Images Upload */}
                 <div className="space-y-2">
                 <Label>Images (up to 4)</Label>
-                  <Input
+                <Input
                   type="file"
                   accept="image/*"
                   multiple
@@ -3842,7 +3862,7 @@ id, name, salary
                         >
                           ×
                         </button>
-                </div>
+              </div>
                     ))}
                 </div>
                 )}
@@ -4453,10 +4473,17 @@ id, name, salary
                   value={item.company}
                   onChange={(e) => updateTimelineItem(index, "company", e.target.value)}
                 />
+                <Input
+                  placeholder="Company URL (optional, e.g. https://company.com)"
+                  value={item.companyUrl || ""}
+                  onChange={(e) => updateTimelineItem(index, "companyUrl", e.target.value)}
+                  type="url"
+                />
                 <Textarea
                   placeholder="Description"
                   value={item.desc}
                   onChange={(e) => updateTimelineItem(index, "desc", e.target.value)}
+                  className="col-span-2"
                 />
               </div>
               <div className="space-y-2">
