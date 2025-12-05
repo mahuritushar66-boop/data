@@ -417,6 +417,7 @@ const AdminDashboard = () => {
   });
   const [theoryImages, setTheoryImages] = useState<File[]>([]);
   const [theoryPdf, setTheoryPdf] = useState<File | null>(null);
+  const [shouldRemovePdf, setShouldRemovePdf] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -1391,17 +1392,9 @@ const AdminDashboard = () => {
         toast({ title: `${projectPdfFiles.length} PDF(s) uploaded` });
       }
 
-      const projectData = {
+      const projectData: any = {
         title: projectForm.title.trim(),
         description: projectForm.description.trim(),
-        techStackIcons: projectForm.techStackIcons.trim() || undefined,
-        mainCategory: projectForm.mainCategory.trim() || undefined,
-        keyFeature: projectForm.keyFeature.trim() || undefined,
-        demoUrl: projectForm.demoUrl.trim() || undefined,
-        githubUrl: projectForm.githubUrl.trim() || undefined,
-        thumbnailEmoji: projectForm.thumbnailEmoji.trim() || undefined,
-        difficultyLevel: projectForm.difficultyLevel.trim() || undefined,
-        timeToBuild: projectForm.timeToBuild.trim() || undefined,
         imageUrls,
         pdfUrls,
         driveLinks: validDriveLinks,
@@ -1409,6 +1402,32 @@ const AdminDashboard = () => {
         imageUrl: imageUrls[0] || "",
         driveLink: validDriveLinks[0] || "",
       };
+
+      // Only add optional fields if they have values (avoid undefined)
+      if (projectForm.techStackIcons.trim()) {
+        projectData.techStackIcons = projectForm.techStackIcons.trim();
+      }
+      if (projectForm.mainCategory.trim()) {
+        projectData.mainCategory = projectForm.mainCategory.trim();
+      }
+      if (projectForm.keyFeature.trim()) {
+        projectData.keyFeature = projectForm.keyFeature.trim();
+      }
+      if (projectForm.demoUrl.trim()) {
+        projectData.demoUrl = projectForm.demoUrl.trim();
+      }
+      if (projectForm.githubUrl.trim()) {
+        projectData.githubUrl = projectForm.githubUrl.trim();
+      }
+      if (projectForm.thumbnailEmoji.trim()) {
+        projectData.thumbnailEmoji = projectForm.thumbnailEmoji.trim();
+      }
+      if (projectForm.difficultyLevel.trim()) {
+        projectData.difficultyLevel = projectForm.difficultyLevel.trim();
+      }
+      if (projectForm.timeToBuild.trim()) {
+        projectData.timeToBuild = projectForm.timeToBuild.trim();
+      }
 
       if (editingProject) {
         await updateDoc(doc(db, "projects", editingProject.id), {
@@ -2070,6 +2089,7 @@ const AdminDashboard = () => {
     }
     setTheoryImages([]);
     setTheoryPdf(null);
+    setShouldRemovePdf(false);
     setIsTheoryDialogOpen(true);
   };
 
@@ -2086,7 +2106,12 @@ const AdminDashboard = () => {
     setIsSavingTheory(true);
     try {
       let imageUrls: string[] = editingTheory?.imageUrls || [];
-      let pdfUrl = editingTheory?.pdfUrl || "";
+      let pdfUrl: string | null = editingTheory?.pdfUrl || null;
+
+      // Handle PDF removal
+      if (shouldRemovePdf) {
+        pdfUrl = null;
+      }
 
       // Upload images - try Cloudinary first, then Firebase Storage
       if (theoryImages.length > 0) {
@@ -2178,6 +2203,7 @@ const AdminDashboard = () => {
       setEditingTheory(null);
       setTheoryImages([]);
       setTheoryPdf(null);
+      setShouldRemovePdf(false);
     } catch (error: any) {
       toast({
         title: "Failed to save theory question",
@@ -3344,20 +3370,47 @@ id, name, salary
                 <Input
                   type="file"
                   accept=".pdf"
-                  onChange={(e) => setTheoryPdf(e.target.files?.[0] || null)}
+                  onChange={(e) => {
+                    setTheoryPdf(e.target.files?.[0] || null);
+                    setShouldRemovePdf(false); // Reset removal flag when new file is selected
+                  }}
                 />
                 {theoryPdf && (
                   <p className="text-xs text-primary">Selected: {theoryPdf.name}</p>
                 )}
-                {editingTheory?.pdfUrl && !theoryPdf && (
-                  <a 
-                    href={editingTheory.pdfUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary hover:underline"
-                  >
-                    View current PDF →
-                  </a>
+                {editingTheory?.pdfUrl && !theoryPdf && !shouldRemovePdf && (
+                  <div className="flex items-center gap-2">
+                    <a 
+                      href={editingTheory.pdfUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline"
+                    >
+                      View current PDF →
+                    </a>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setShouldRemovePdf(true)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      Remove PDF
+                    </Button>
+                  </div>
+                )}
+                {shouldRemovePdf && (
+                  <p className="text-xs text-destructive">
+                    PDF will be removed on save. <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShouldRemovePdf(false)}
+                      className="h-4 px-1 text-xs underline"
+                    >
+                      Cancel
+                    </Button>
+                  </p>
                 )}
                 <p className="text-xs text-muted-foreground">
                   PDF will be stored in {isSupabaseConfigured() ? "Supabase" : "Firebase Storage"}.
@@ -3478,12 +3531,12 @@ id, name, salary
               Add Case Study
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
+          <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>{editingCaseStudy ? "Edit Case Study" : "Publish Case Study"}</DialogTitle>
               <DialogDescription>Provide project details, techniques, and resource links.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto flex-1 pr-2">
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Title</Label>
