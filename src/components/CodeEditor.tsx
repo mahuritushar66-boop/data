@@ -185,6 +185,98 @@ const extractSqlTablesFromQuestion = (questionText?: string, adminTableNames?: s
   return tables;
 };
 
+/**
+ * Parse DataFrame print output and convert to structured table format
+ * Handles pandas DataFrame print format like:
+ *   ride_id driver_name fare_amount
+ * 0     501       Arjun       250.0
+ * 3     504        Sara       180.0
+ */
+const parseDataFrameOutput = (output: string): { columns: string[]; values: any[][] } | null => {
+  if (!output || typeof output !== 'string') return null;
+  
+  const lines = output.trim().split('\n').filter(line => line.trim().length > 0);
+  if (lines.length < 2) return null; // Need at least header + 1 data row
+  
+  try {
+    // First line is the header (column names)
+    const headerLine = lines[0].trim();
+    // Split header by whitespace, but handle multiple spaces
+    const columns = headerLine.split(/\s+/).filter(col => col.length > 0);
+    
+    if (columns.length === 0) return null;
+    
+    // Check if this looks like a DataFrame (has numeric index in first column of data rows)
+    let hasIndex = false;
+    if (lines.length > 1) {
+      const firstDataLine = lines[1].trim();
+      const firstPart = firstDataLine.split(/\s+/)[0];
+      // Check if first part looks like an index (numeric)
+      hasIndex = /^\d+$/.test(firstPart);
+    }
+    
+    // Parse data rows (skip first line which is header)
+    const values: any[][] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // Split by whitespace, handling multiple spaces
+      const parts = line.split(/\s+/).filter(part => part.length > 0);
+      
+      // If we detected an index, skip the first part
+      let dataParts: string[];
+      if (hasIndex && parts.length > columns.length) {
+        // Has index column, skip it
+        dataParts = parts.slice(1);
+      } else if (parts.length === columns.length) {
+        // No index column or already aligned
+        dataParts = parts;
+      } else if (parts.length > columns.length) {
+        // More parts than columns, likely has index - skip first
+        dataParts = parts.slice(1).slice(0, columns.length);
+      } else {
+        // Fewer parts - might be due to missing values or alignment issues
+        dataParts = parts;
+      }
+      
+      // Ensure we have the right number of columns
+      while (dataParts.length < columns.length) {
+        dataParts.push(''); // Pad with empty strings
+      }
+      dataParts = dataParts.slice(0, columns.length); // Trim if too many
+      
+      // Convert values, handling integers (remove .0 from floats that are actually integers)
+      const row = dataParts.map((val) => {
+        if (val === '' || val === null || val === undefined) return '';
+        
+        // Try to parse as number
+        const numVal = Number(val);
+        if (!isNaN(numVal) && val.trim() !== '') {
+          // If it's a float that's actually an integer (e.g., 250.0), return as integer
+          if (Number.isInteger(numVal)) {
+            return Math.floor(numVal);
+          }
+          return numVal;
+        }
+        return String(val);
+      });
+      
+      // Only add row if it has the correct number of columns
+      if (row.length === columns.length) {
+        values.push(row);
+      }
+    }
+    
+    if (values.length === 0) return null;
+    
+    return { columns, values };
+  } catch (e) {
+    // If parsing fails, return null to fall back to text output
+    return null;
+  }
+};
+
 const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", question, questionId, expectedOutput, hideOutput = false, sqlTableNames, difficulty, onOutputChange, onValidationChange }: CodeEditorProps) => {
   const { currentUser } = useAuth();
   const [hasAwardedXP, setHasAwardedXP] = useState(false);
@@ -1221,7 +1313,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
               title: "Using SQLite (offline mode)",
               description: "OneCompiler unavailable. Some MySQL syntax may differ.",
             });
-          }
+        }
 
         // Split by semicolons to handle multiple queries
         const queries = executableCode
@@ -1360,6 +1452,34 @@ from sklearn import *
 import scipy
 import statsmodels.api as sm
 import json
+import builtins
+
+# Override print to automatically convert DataFrames to JSON format
+_original_print = builtins.print
+def print(*args, **kwargs):
+    for arg in args:
+        if isinstance(arg, pd.DataFrame):
+            # Convert DataFrame to JSON format for structured output
+            df_dict = arg.to_dict('records')
+            # Convert values, handling integers (remove .0 from floats that are actually integers)
+            def format_value(v):
+                if v is None:
+                    return ''
+                if isinstance(v, (int, float)):
+                    # If it's a float that's actually an integer, return as integer
+                    if isinstance(v, float) and v.is_integer():
+                        return int(v)
+                    return v
+                return str(v)
+            df_json = json.dumps({
+                "columns": list(arg.columns),
+                "values": [[format_value(v) for v in row.values()] for row in df_dict]
+            })
+            # Output on separate lines for proper regex matching
+            _original_print("__PYTHON_DF_JSON__")
+            _original_print(df_json)
+        else:
+            _original_print(arg, **kwargs)
 
 `;
 
@@ -1411,18 +1531,28 @@ del _temp_data
                 : table.tableName
             );
             
+            // Create 'df' as an alias to the first DataFrame for convenience
+            if (finalTableNames.length > 0) {
+              const firstName = finalTableNames[0];
+              pythonCode += `\n# Create 'df' as alias to first DataFrame (${firstName})\ndf = ${firstName}\n`;
+            }
+            
           toast({
               title: "DataFrames loaded",
-              description: `Available: ${finalTableNames.join(", ")}`,
+              description: `Available: ${finalTableNames.length > 0 ? `df, ${finalTableNames.join(", ")}` : "None"}`,
             });
           } else if (adminTableNamesList.length > 0) {
             // Create empty DataFrames from admin-provided table names
             for (const tableName of adminTableNamesList) {
               pythonCode += `\n# Create empty DataFrame: ${tableName}\n${tableName} = pd.DataFrame()\n`;
             }
+            // Create 'df' as an alias to the first DataFrame
+            if (adminTableNamesList.length > 0) {
+              pythonCode += `\n# Create 'df' as alias to first DataFrame (${adminTableNamesList[0]})\ndf = ${adminTableNamesList[0]}\n`;
+            }
             toast({
               title: "Note: Empty DataFrames",
-              description: `Created: ${adminTableNamesList.join(", ")}. Data from question not parsed.`,
+              description: `Created: df, ${adminTableNamesList.join(", ")}. Data from question not parsed.`,
             variant: "destructive",
           });
           }
@@ -1599,7 +1729,15 @@ except:
                   }
                 }
               } catch (e) {
-                // If JSON parsing fails, just use text output
+                // If JSON parsing fails, try to parse as DataFrame print output
+              }
+            }
+            
+            // If no structured output yet, try to parse DataFrame print format
+            if (!structuredOutput && outputText) {
+              const parsedDF = parseDataFrameOutput(outputText);
+              if (parsedDF) {
+                structuredOutput = parsedDF;
               }
             }
             
@@ -1652,7 +1790,36 @@ sys.stderr = StringIO()
 
         try {
                 // Always import pandas and numpy
-                pyodide.runPython(`import pandas as pd\nimport numpy as np`);
+                pyodide.runPython(`import pandas as pd\nimport numpy as np\nimport json\nimport builtins`);
+                
+                // Override print to automatically convert DataFrames to JSON format
+                pyodide.runPython(`
+_original_print = builtins.print
+def print(*args, **kwargs):
+    for arg in args:
+        if isinstance(arg, pd.DataFrame):
+            # Convert DataFrame to JSON format for structured output
+            df_dict = arg.to_dict('records')
+            # Convert values, handling integers (remove .0 from floats that are actually integers)
+            def format_value(v):
+                if v is None:
+                    return ''
+                if isinstance(v, (int, float)):
+                    # If it's a float that's actually an integer, return as integer
+                    if isinstance(v, float) and v.is_integer():
+                        return int(v)
+                    return v
+                return str(v)
+            df_json = json.dumps({
+                "columns": list(arg.columns),
+                "values": [[format_value(v) for v in row.values()] for row in df_dict]
+            })
+            # Output on separate lines for proper regex matching
+            _original_print("__PYTHON_DF_JSON__")
+            _original_print(df_json)
+        else:
+            _original_print(arg, **kwargs)
+`);
                 
                 // Parse admin-provided table names (comma-separated) - ALWAYS prioritize these
                 const adminTableNamesList: string[] = sqlTableNames
@@ -1691,10 +1858,22 @@ ${tableName} = pd.DataFrame(_temp_data)
 del _temp_data
 `);
                   }
+                  
+                  // Create 'df' as an alias to the first DataFrame for convenience
+                  if (questionTables.length > 0) {
+                    const firstName = adminTableNamesList.length > 0 
+                      ? adminTableNamesList[0]
+                      : questionTables[0].tableName;
+                    pyodide.runPython(`# Create 'df' as alias to first DataFrame (${firstName})\ndf = ${firstName}`);
+                  }
                 } else if (adminTableNamesList.length > 0) {
                   // Create empty DataFrames from admin-provided table names
                   for (const tableName of adminTableNamesList) {
                     pyodide.runPython(`${tableName} = pd.DataFrame()`);
+                  }
+                  // Create 'df' as an alias to the first DataFrame
+                  if (adminTableNamesList.length > 0) {
+                    pyodide.runPython(`# Create 'df' as alias to first DataFrame (${adminTableNamesList[0]})\ndf = ${adminTableNamesList[0]}`);
                   }
                 }
 
@@ -1809,7 +1988,15 @@ except:
                     }
                   }
                 } catch (e) {
-                  // If JSON parsing fails, just use text output
+                  // If JSON parsing fails, try to parse as DataFrame print output
+                }
+              }
+              
+              // If no structured output yet, try to parse DataFrame print format
+              if (!structuredOutput && outputText) {
+                const parsedDF = parseDataFrameOutput(outputText);
+                if (parsedDF) {
+                  structuredOutput = parsedDF;
                 }
               }
               
