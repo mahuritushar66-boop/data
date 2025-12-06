@@ -174,23 +174,49 @@ const About = () => {
             </h2>
             <div className="max-w-3xl mx-auto space-y-6">
               {content.timeline.map((item, index) => {
+                // Format duration: "2024 to 2025" or "2024 to present"
+                const getDuration = () => {
+                  if (item.startYear && item.endYear) {
+                    const endYear = item.endYear.toLowerCase() === "present" ? "present" : item.endYear;
+                    return `${item.startYear} to ${endYear}`;
+                  } else if (item.startYear) {
+                    return `${item.startYear} to present`;
+                  } else if (item.year) {
+                    return item.year;
+                  }
+                  return null;
+                };
+
+                const duration = getDuration();
+
                 return (
                   <GlassCard key={index} className="relative">
                     <div>
-                        <h3 className="text-xl font-bold mb-1">{item.title}</h3>
-                        {item.companyUrl ? (
-                          <a 
-                            href={item.companyUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-primary mb-2 hover:underline inline-block"
-                          >
-                            {item.company}
-                          </a>
-                        ) : (
-                          <p className="text-primary mb-2">{item.company}</p>
+                        <div className="flex items-start justify-between gap-4 mb-2">
+                          <div className="flex-1">
+                            <h3 className="text-xl font-bold mb-1">{item.title}</h3>
+                            {item.companyUrl ? (
+                              <a 
+                                href={item.companyUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-primary mb-2 hover:underline inline-block"
+                              >
+                                {item.company}
+                              </a>
+                            ) : (
+                              <p className="text-primary mb-2">{item.company}</p>
+                            )}
+                          </div>
+                          {duration && (
+                            <Badge variant="outline" className="flex-shrink-0 whitespace-nowrap">
+                              {duration}
+                            </Badge>
+                          )}
+                        </div>
+                        {item.desc && (
+                          <p className="text-muted-foreground mb-3">{item.desc}</p>
                         )}
-                        <p className="text-muted-foreground mb-3">{item.desc}</p>
                         {item.experienceDetails && item.experienceDetails.length > 0 && (
                           <ul className="space-y-1.5 mt-3">
                             {item.experienceDetails.map((detail, idx) => (

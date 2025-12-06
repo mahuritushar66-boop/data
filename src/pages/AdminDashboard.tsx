@@ -726,7 +726,13 @@ const AdminDashboard = () => {
           avatarUrl: data.avatarUrl || "",
           story: data.story || "",
           skills: data.skills || [],
-          timeline: data.timeline || [],
+          timeline: (data.timeline || []).map((item: any) => ({
+            ...item,
+            experienceDetails: item.experienceDetails || [],
+            companyUrl: item.companyUrl || "",
+            startYear: item.startYear || item.year || "",
+            endYear: item.endYear || "",
+          })),
           achievements: data.achievements || [],
         });
         setAboutForm({
@@ -735,7 +741,13 @@ const AdminDashboard = () => {
           avatarUrl: data.avatarUrl || "",
           story: data.story || "",
           skills: (data.skills || []).join(", "),
-          timeline: data.timeline || [],
+          timeline: (data.timeline || []).map((item: any) => ({
+            ...item,
+            experienceDetails: item.experienceDetails || [],
+            companyUrl: item.companyUrl || "",
+            startYear: item.startYear || item.year || "",
+            endYear: item.endYear || "",
+          })),
           achievements: data.achievements || [],
         });
       }
