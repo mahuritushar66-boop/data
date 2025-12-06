@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, ExternalLink, Code } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ExternalLink, Code, Github, FileText, Database } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -33,6 +34,8 @@ const CaseStudies = () => {
   const { toast } = useToast();
   const [studies, setStudies] = useState<CaseStudy[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedStudy, setSelectedStudy] = useState<CaseStudy | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "caseStudies"), orderBy("createdAt", "desc"));
@@ -177,19 +180,17 @@ const CaseStudies = () => {
                   
                   {/* View Case Study Button */}
                   <div className="mt-auto pt-3">
-                    {study.viewUrl ? (
-                      <Button asChild className="w-full bg-gradient-primary gap-2" size="sm">
-                        <a href={study.viewUrl} target="_blank" rel="noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                          View Case Study
-                        </a>
-                      </Button>
-                    ) : (
-                      <Button className="w-full bg-gradient-primary gap-2" size="sm" disabled>
-                        <ExternalLink className="h-4 w-4" />
-                        View Case Study
-                      </Button>
-                    )}
+                    <Button 
+                      className="w-full bg-gradient-primary gap-2" 
+                      size="sm"
+                      onClick={() => {
+                        setSelectedStudy(study);
+                        setIsDetailOpen(true);
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      View Case Study
+                    </Button>
                   </div>
                 </GlassCard>
               );
@@ -197,6 +198,179 @@ const CaseStudies = () => {
           </div>
         )}
       </div>
+
+      {/* Case Study Detail Dialog */}
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+              {selectedStudy?.coverEmoji && <span className="text-3xl">{selectedStudy.coverEmoji}</span>}
+              {selectedStudy?.title}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedStudy && (
+            <div className="space-y-6">
+              {/* Industry Tags */}
+              {selectedStudy.industry && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedStudy.industry.split("|").map((part, idx) => (
+                    <Badge key={idx} variant="outline">
+                      {part.trim()}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedStudy.description && (
+                <div>
+                  <h3 className="font-semibold mb-2">Summary</h3>
+                  <p className="text-muted-foreground">{selectedStudy.description}</p>
+                </div>
+              )}
+
+              {/* Problem Statement */}
+              {selectedStudy.problemStatement && (
+                <div>
+                  <h3 className="font-semibold mb-2">Problem Statement</h3>
+                  <p className="text-muted-foreground whitespace-pre-line">{selectedStudy.problemStatement}</p>
+                </div>
+              )}
+
+              {/* Overview */}
+              {selectedStudy.overview && (
+                <div>
+                  <h3 className="font-semibold mb-2">Overview</h3>
+                  <p className="text-muted-foreground whitespace-pre-line">{selectedStudy.overview}</p>
+                </div>
+              )}
+
+              {/* Techniques */}
+              {selectedStudy.techniques && selectedStudy.techniques.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2">Techniques Used</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedStudy.techniques.map((tech, idx) => (
+                      <Badge key={idx} variant="secondary">
+                        {tech}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Key Outcomes */}
+              {selectedStudy.outcomes && selectedStudy.outcomes.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2">Key Outcomes</h3>
+                  <ul className="space-y-2">
+                    {selectedStudy.outcomes.map((outcome, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-primary mt-1">•</span>
+                        <span className="text-muted-foreground">{outcome}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Tech Stack */}
+              {selectedStudy.techStackIcons && (
+                <div>
+                  <h3 className="font-semibold mb-2">Tech Stack</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedStudy.techStackIcons.split(",").map((tech, idx) => (
+                      <Badge key={idx} variant="outline">
+                        {tech.trim()}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Difficulty & Time */}
+              {(selectedStudy.difficultyLevel || selectedStudy.timeToBuild) && (
+                <div className="flex gap-4 text-sm">
+                  {selectedStudy.difficultyLevel && (
+                    <div>
+                      <span className="font-semibold">Difficulty: </span>
+                      <span className="text-muted-foreground">{selectedStudy.difficultyLevel}</span>
+                    </div>
+                  )}
+                  {selectedStudy.timeToBuild && (
+                    <div>
+                      <span className="font-semibold">Time to Build: </span>
+                      <span className="text-muted-foreground">{selectedStudy.timeToBuild}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Badge */}
+              {selectedStudy.badge && (
+                <div>
+                  <Badge variant="outline" className="text-sm">
+                    ⭐ {selectedStudy.badge}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Links */}
+              <div className="flex flex-wrap gap-3 pt-4 border-t">
+                {selectedStudy.demoUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedStudy.demoUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      View Demo
+                    </a>
+                  </Button>
+                )}
+                {selectedStudy.githubUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedStudy.githubUrl} target="_blank" rel="noopener noreferrer">
+                      <Github className="h-4 w-4 mr-2" />
+                      GitHub
+                    </a>
+                  </Button>
+                )}
+                {selectedStudy.notebookUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedStudy.notebookUrl} target="_blank" rel="noopener noreferrer">
+                      <Code className="h-4 w-4 mr-2" />
+                      Notebook
+                    </a>
+                  </Button>
+                )}
+                {selectedStudy.datasetUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedStudy.datasetUrl} target="_blank" rel="noopener noreferrer">
+                      <Database className="h-4 w-4 mr-2" />
+                      Dataset
+                    </a>
+                  </Button>
+                )}
+                {selectedStudy.pdfUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedStudy.pdfUrl} target="_blank" rel="noopener noreferrer">
+                      <FileText className="h-4 w-4 mr-2" />
+                      PDF Report
+                    </a>
+                  </Button>
+                )}
+                {selectedStudy.viewUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedStudy.viewUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Full Analysis
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
