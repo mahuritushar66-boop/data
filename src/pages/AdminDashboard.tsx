@@ -1908,48 +1908,62 @@ const AdminDashboard = () => {
 
     setIsSavingService(true);
     try {
+      // Helper function to get trimmed value or null
+      const getValue = (val: string) => {
+        const trimmed = val.trim();
+        return trimmed || null;
+      };
+
+      // Build the service data object, only including fields with values
+      const serviceData: any = {
+        icon: serviceForm.icon,
+        title: serviceForm.title.trim(),
+        description: serviceForm.description.trim(),
+        features: featuresArray,
+        updatedAt: serverTimestamp(),
+      };
+
+      // Only add optional fields if they have values
+      const serviceCategory = getValue(serviceForm.serviceCategory);
+      if (serviceCategory) serviceData.serviceCategory = serviceCategory;
+
+      const price = getValue(serviceForm.price);
+      if (price) serviceData.price = price;
+
+      if (deliverablesArray.length > 0) serviceData.deliverables = deliverablesArray;
+
+      const timeline = getValue(serviceForm.timeline);
+      if (timeline) serviceData.timeline = timeline;
+
+      const tools = getValue(serviceForm.tools);
+      if (tools) serviceData.tools = tools;
+
+      const idealFor = getValue(serviceForm.idealFor);
+      if (idealFor) serviceData.idealFor = idealFor;
+
+      const ctaLabel = getValue(serviceForm.ctaLabel);
+      if (ctaLabel) serviceData.ctaLabel = ctaLabel;
+
+      const ctaUrl = getValue(serviceForm.ctaUrl);
+      if (ctaUrl) serviceData.ctaUrl = ctaUrl;
+
+      const badge = getValue(serviceForm.badge);
+      if (badge) serviceData.badge = badge;
+
+      if (serviceForm.rating) serviceData.rating = serviceForm.rating;
+
+      const testimonials = getValue(serviceForm.testimonials);
+      if (testimonials) serviceData.testimonials = testimonials;
+
+      const faq = getValue(serviceForm.faq);
+      if (faq) serviceData.faq = faq;
+
       if (editingService) {
-        await updateDoc(doc(db, "services", editingService.id), {
-          icon: serviceForm.icon,
-          serviceCategory: serviceForm.serviceCategory.trim() || undefined,
-          title: serviceForm.title.trim(),
-          price: serviceForm.price.trim() || undefined,
-          description: serviceForm.description.trim(),
-          features: featuresArray,
-          deliverables: deliverablesArray.length > 0 ? deliverablesArray : undefined,
-          timeline: serviceForm.timeline.trim() || undefined,
-          tools: serviceForm.tools.trim() || undefined,
-          idealFor: serviceForm.idealFor.trim() || undefined,
-          ctaLabel: serviceForm.ctaLabel.trim() || undefined,
-          ctaUrl: serviceForm.ctaUrl.trim() || undefined,
-          badge: serviceForm.badge.trim() || undefined,
-          rating: serviceForm.rating || undefined,
-          testimonials: serviceForm.testimonials.trim() || undefined,
-          faq: serviceForm.faq.trim() || undefined,
-          updatedAt: serverTimestamp(),
-        });
+        await updateDoc(doc(db, "services", editingService.id), serviceData);
         toast({ title: "Service updated" });
       } else {
-        await addDoc(collection(db, "services"), {
-          icon: serviceForm.icon,
-          serviceCategory: serviceForm.serviceCategory.trim() || undefined,
-          title: serviceForm.title.trim(),
-          price: serviceForm.price.trim() || undefined,
-          description: serviceForm.description.trim(),
-          features: featuresArray,
-          deliverables: deliverablesArray.length > 0 ? deliverablesArray : undefined,
-          timeline: serviceForm.timeline.trim() || undefined,
-          tools: serviceForm.tools.trim() || undefined,
-          idealFor: serviceForm.idealFor.trim() || undefined,
-          ctaLabel: serviceForm.ctaLabel.trim() || undefined,
-          ctaUrl: serviceForm.ctaUrl.trim() || undefined,
-          badge: serviceForm.badge.trim() || undefined,
-          rating: serviceForm.rating || undefined,
-          testimonials: serviceForm.testimonials.trim() || undefined,
-          faq: serviceForm.faq.trim() || undefined,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        serviceData.createdAt = serverTimestamp();
+        await addDoc(collection(db, "services"), serviceData);
         toast({ title: "Service added" });
       }
       setIsServiceDialogOpen(false);

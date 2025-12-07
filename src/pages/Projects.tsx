@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download, FolderOpen, FileText, Image as ImageIcon, ExternalLink } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Download, FolderOpen, FileText, Image as ImageIcon, ExternalLink, Github, Code } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -31,6 +32,8 @@ const Projects = () => {
   const { toast } = useToast();
   const [projects, setProjects] = useState<ProjectResource[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedProject, setSelectedProject] = useState<ProjectResource | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "projects"), orderBy("createdAt", "desc"));
@@ -155,27 +158,17 @@ const Projects = () => {
                   
                   {/* Button */}
                   <div className="mt-auto pt-3">
-                    {primaryUrl ? (
-                      <Button 
-                        asChild 
-                        className="w-full bg-gradient-primary gap-2" 
-                        size="sm"
-                      >
-                        <a href={primaryUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                          {project.demoUrl ? "Open Demo" : project.githubUrl ? "View on GitHub" : "View Project"}
-                        </a>
-                      </Button>
-                    ) : (
-                      <Button 
-                        className="w-full bg-gradient-primary gap-2" 
-                        size="sm"
-                        disabled
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        View Project
-                      </Button>
-                    )}
+                    <Button 
+                      className="w-full bg-gradient-primary gap-2" 
+                      size="sm"
+                      onClick={() => {
+                        setSelectedProject(project);
+                        setIsDetailOpen(true);
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      View Details
+                    </Button>
                   </div>
                 </GlassCard>
               );
@@ -183,6 +176,192 @@ const Projects = () => {
           </div>
         )}
       </div>
+
+      {/* Project Detail Dialog */}
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+              {selectedProject?.thumbnailEmoji && <span className="text-3xl">{selectedProject.thumbnailEmoji}</span>}
+              {selectedProject?.title}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedProject && (
+            <div className="space-y-6">
+              {/* Main Category */}
+              {selectedProject.mainCategory && (
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">
+                    {selectedProject.mainCategory}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedProject.description && (
+                <div>
+                  <h3 className="font-semibold mb-2">Description</h3>
+                  <p className="text-muted-foreground whitespace-pre-line">{selectedProject.description}</p>
+                </div>
+              )}
+
+              {/* Key Feature */}
+              {selectedProject.keyFeature && (
+                <div>
+                  <h3 className="font-semibold mb-2">Key Feature</h3>
+                  <Badge variant="secondary" className="text-sm font-semibold bg-primary/20 text-primary">
+                    {selectedProject.keyFeature}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Tech Stack */}
+              {selectedProject.techStackIcons && (
+                <div>
+                  <h3 className="font-semibold mb-2">Tech Stack</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedProject.techStackIcons.split(",").map((tech, idx) => (
+                      <Badge key={idx} variant="outline">
+                        {tech.trim()}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Difficulty & Time */}
+              {(selectedProject.difficultyLevel || selectedProject.timeToBuild) && (
+                <div className="flex gap-4 text-sm">
+                  {selectedProject.difficultyLevel && (
+                    <div>
+                      <span className="font-semibold">Difficulty: </span>
+                      <span className="text-muted-foreground">{selectedProject.difficultyLevel}</span>
+                    </div>
+                  )}
+                  {selectedProject.timeToBuild && (
+                    <div>
+                      <span className="font-semibold">Time to Build: </span>
+                      <span className="text-muted-foreground">{selectedProject.timeToBuild}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Images */}
+              {(selectedProject.imageUrls && selectedProject.imageUrls.length > 0) || selectedProject.imageUrl ? (
+                <div>
+                  <h3 className="font-semibold mb-2">Images</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {selectedProject.imageUrls?.map((url, idx) => (
+                      <a
+                        key={idx}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative group"
+                      >
+                        <img
+                          src={url}
+                          alt={`${selectedProject.title} - Image ${idx + 1}`}
+                          className="w-full h-32 object-cover rounded-lg border hover:opacity-80 transition-opacity"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center">
+                          <ImageIcon className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </a>
+                    ))}
+                    {selectedProject.imageUrl && !selectedProject.imageUrls?.includes(selectedProject.imageUrl) && (
+                      <a
+                        href={selectedProject.imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="relative group"
+                      >
+                        <img
+                          src={selectedProject.imageUrl}
+                          alt={selectedProject.title}
+                          className="w-full h-32 object-cover rounded-lg border hover:opacity-80 transition-opacity"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center">
+                          <ImageIcon className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* PDFs */}
+              {selectedProject.pdfUrls && selectedProject.pdfUrls.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2">PDF Documents</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedProject.pdfUrls.map((url, idx) => (
+                      <Button
+                        key={idx}
+                        asChild
+                        variant="outline"
+                        size="sm"
+                      >
+                        <a href={url} target="_blank" rel="noopener noreferrer">
+                          <FileText className="h-4 w-4 mr-2" />
+                          PDF {idx + 1}
+                        </a>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Links */}
+              <div className="flex flex-wrap gap-3 pt-4 border-t">
+                {selectedProject.demoUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedProject.demoUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Open Demo
+                    </a>
+                  </Button>
+                )}
+                {selectedProject.githubUrl && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedProject.githubUrl} target="_blank" rel="noopener noreferrer">
+                      <Github className="h-4 w-4 mr-2" />
+                      View on GitHub
+                    </a>
+                  </Button>
+                )}
+                {selectedProject.driveLinks && selectedProject.driveLinks.length > 0 && (
+                  <>
+                    {selectedProject.driveLinks.map((link, idx) => (
+                      <Button
+                        key={idx}
+                        asChild
+                        variant="outline"
+                        size="sm"
+                      >
+                        <a href={link} target="_blank" rel="noopener noreferrer">
+                          <Download className="h-4 w-4 mr-2" />
+                          {selectedProject.driveLinks!.length > 1 ? `Download ${idx + 1}` : "Download"}
+                        </a>
+                      </Button>
+                    ))}
+                  </>
+                )}
+                {selectedProject.driveLink && !selectedProject.driveLinks?.includes(selectedProject.driveLink) && (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={selectedProject.driveLink} target="_blank" rel="noopener noreferrer">
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
