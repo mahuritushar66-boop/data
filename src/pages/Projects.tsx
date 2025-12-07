@@ -82,16 +82,18 @@ const Projects = () => {
 
   return (
     <div className="min-h-screen py-20">
-      <div className="container mx-auto px-4 space-y-12 max-w-5xl">
-        <div className="text-center space-y-4">
-          <h1 className="text-5xl font-bold">
+      <div className="container mx-auto px-4">
+        {/* Header */}
+        <div className="text-center mb-16 animate-fade-up">
+          <h1 className="text-5xl font-bold mb-4">
             <span className="bg-gradient-primary bg-clip-text text-transparent">Projects & Resources</span>
           </h1>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
             Download curated projects, templates, and resources contributed by the Bytes of Data team.
           </p>
         </div>
 
+        {/* Projects Grid */}
         {loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
@@ -104,7 +106,7 @@ const Projects = () => {
             <p className="text-muted-foreground">New resources will appear here as soon as they are published.</p>
           </GlassCard>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid lg:grid-cols-3 gap-8 mb-16">
             {projects.map((project) => {
               const techStack = project.techStackIcons 
                 ? project.techStackIcons.split(",").map((item: string) => item.trim())

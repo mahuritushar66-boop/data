@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import GlassCard from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Briefcase, LineChart, Users, Lightbulb, Code, Brain, BookOpen, TrendingUp, Database, BarChart3, Zap, Target, ExternalLink, CheckCircle2, Clock, Wrench, UserCheck, Star } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
@@ -48,6 +49,8 @@ const Services = () => {
   const { toast } = useToast();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   useEffect(() => {
     const q = query(collection(db, "services"), orderBy("createdAt", "desc"));
@@ -132,10 +135,7 @@ const Services = () => {
                   </div>
                   
                   {/* Title */}
-                  <h3 className="text-2xl font-bold mb-2">{service.title}</h3>
-                  
-                  {/* Short Description */}
-                  <p className="text-muted-foreground mb-4 line-clamp-2">{service.description}</p>
+                  <h3 className="text-2xl font-bold mb-4">{service.title}</h3>
                   
                   {/* Key Highlights (Features) */}
                   <div className="mb-4 flex-grow">
@@ -192,14 +192,11 @@ const Services = () => {
                       variant="outline"
                       className="w-full"
                       onClick={() => {
-                        // You can add a modal or expandable section for "See Details"
-                        toast({
-                          title: service.title,
-                          description: service.description,
-                        });
+                        setSelectedService(service);
+                        setIsDetailOpen(true);
                       }}
                     >
-                      See Details
+                      View Details
                     </Button>
                   </div>
                 </GlassCard>
@@ -254,6 +251,192 @@ const Services = () => {
           </div>
         </GlassCard>
       </div>
+
+      {/* Service Detail Dialog */}
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold flex items-center gap-3">
+              {selectedService && (() => {
+                const Icon = iconMap[selectedService.icon] || Briefcase;
+                return (
+                  <div className="inline-flex p-2 bg-gradient-primary rounded-lg">
+                    <Icon className="h-6 w-6 text-primary-foreground" />
+                  </div>
+                );
+              })()}
+              {selectedService?.title}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedService && (
+            <div className="space-y-6">
+              {/* Service Category */}
+              {selectedService.serviceCategory && (
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">
+                    {selectedService.serviceCategory}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedService.description && (
+                <div>
+                  <h3 className="font-semibold mb-2">Description</h3>
+                  <p className="text-muted-foreground whitespace-pre-line">{selectedService.description}</p>
+                </div>
+              )}
+
+              {/* Price */}
+              {selectedService.price && (
+                <div>
+                  <h3 className="font-semibold mb-2">Pricing</h3>
+                  <p className="text-lg font-semibold text-primary">{selectedService.price}</p>
+                </div>
+              )}
+
+              {/* Rating */}
+              {selectedService.rating && (
+                <div>
+                  <h3 className="font-semibold mb-2">Rating</h3>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`h-5 w-5 ${
+                            i < selectedService.rating!
+                              ? "text-yellow-500 fill-yellow-500"
+                              : "text-muted-foreground"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-muted-foreground">({selectedService.rating}/5)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Features */}
+              {selectedService.features && selectedService.features.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                    Features & Capabilities
+                  </h3>
+                  <ul className="space-y-2">
+                    {selectedService.features.map((feature, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-primary mt-1">•</span>
+                        <span className="text-muted-foreground">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Deliverables */}
+              {selectedService.deliverables && selectedService.deliverables.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <Briefcase className="h-5 w-5 text-primary" />
+                    Deliverables
+                  </h3>
+                  <ul className="space-y-2">
+                    {selectedService.deliverables.map((deliverable, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="text-primary mt-1">•</span>
+                        <span className="text-muted-foreground">{deliverable}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Timeline */}
+              {selectedService.timeline && (
+                <div>
+                  <h3 className="font-semibold mb-2 flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-primary" />
+                    Timeline / Duration
+                  </h3>
+                  <p className="text-muted-foreground">{selectedService.timeline}</p>
+                </div>
+              )}
+
+              {/* Tools / Tech Stack */}
+              {selectedService.tools && (
+                <div>
+                  <h3 className="font-semibold mb-2 flex items-center gap-2">
+                    <Wrench className="h-5 w-5 text-primary" />
+                    Tools & Technology
+                  </h3>
+                  <p className="text-muted-foreground">{selectedService.tools}</p>
+                </div>
+              )}
+
+              {/* Ideal For */}
+              {selectedService.idealFor && (
+                <div>
+                  <h3 className="font-semibold mb-2 flex items-center gap-2">
+                    <UserCheck className="h-5 w-5 text-primary" />
+                    Ideal For
+                  </h3>
+                  <p className="text-muted-foreground">{selectedService.idealFor}</p>
+                </div>
+              )}
+
+              {/* Badge */}
+              {selectedService.badge && (
+                <div>
+                  <Badge variant="outline" className="text-sm">
+                    ⭐ {selectedService.badge}
+                  </Badge>
+                </div>
+              )}
+
+              {/* Testimonials */}
+              {selectedService.testimonials && (
+                <div>
+                  <h3 className="font-semibold mb-2">Testimonials</h3>
+                  <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                    <p className="text-muted-foreground whitespace-pre-line italic">
+                      "{selectedService.testimonials}"
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* FAQ */}
+              {selectedService.faq && (
+                <div>
+                  <h3 className="font-semibold mb-2">Frequently Asked Questions</h3>
+                  <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                    <p className="text-muted-foreground whitespace-pre-line">{selectedService.faq}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* CTA Button */}
+              {selectedService.ctaUrl && (
+                <div className="flex flex-wrap gap-3 pt-4 border-t">
+                  <Button
+                    asChild
+                    className="bg-gradient-primary hover:shadow-glow-primary"
+                    size="lg"
+                  >
+                    <a href={selectedService.ctaUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      {selectedService.ctaLabel || "Get Started"}
+                    </a>
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

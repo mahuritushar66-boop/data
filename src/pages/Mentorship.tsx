@@ -114,10 +114,10 @@ const Mentorship = () => {
               return (
                 <div key={step.number} className="relative">
                   <GlassCard className="relative p-6 h-full">
-                    <div className="absolute -top-3 -left-3 w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg">
-                      {step.number}
-                    </div>
-                    <div className="mt-4 mb-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg flex-shrink-0">
+                        {step.number}
+                      </div>
                       <div className="inline-flex p-3 bg-primary/10 rounded-lg">
                         <Icon className="h-6 w-6 text-primary" />
                       </div>
@@ -148,10 +148,10 @@ const Mentorship = () => {
               return (
                 <div key={step.number} className="relative">
                   <GlassCard className="relative p-6 h-full">
-                    <div className="absolute -top-3 -left-3 w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg">
-                      {step.number}
-                    </div>
-                    <div className="mt-4 mb-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg flex-shrink-0">
+                        {step.number}
+                      </div>
                       <div className="inline-flex p-3 bg-primary/10 rounded-lg">
                         <Icon className="h-6 w-6 text-primary" />
                       </div>
@@ -182,10 +182,10 @@ const Mentorship = () => {
               return (
                 <div key={step.number} className="relative">
                   <GlassCard className="relative p-6 h-full">
-                    <div className="absolute -top-3 -left-3 w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg">
-                      {step.number}
-                    </div>
-                    <div className="mt-4 mb-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg flex-shrink-0">
+                        {step.number}
+                      </div>
                       <div className="inline-flex p-3 bg-primary/10 rounded-lg">
                         <Icon className="h-6 w-6 text-primary" />
                       </div>
@@ -213,10 +213,10 @@ const Mentorship = () => {
             {/* Step 10 */}
             <div className="relative">
               <GlassCard className="relative p-6 h-full">
-                <div className="absolute -top-3 -left-3 w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg">
-                  10
-                </div>
-                <div className="mt-4 mb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg flex-shrink-0">
+                    10
+                  </div>
                   <div className="inline-flex p-3 bg-primary/10 rounded-lg">
                     <RefreshCw className="h-6 w-6 text-primary" />
                   </div>

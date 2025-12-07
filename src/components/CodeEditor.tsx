@@ -537,6 +537,7 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
   const [db, setDb] = useState<Database | null>(null);
   const [pyodide, setPyodide] = useState<any>(null);
   const [availableTables, setAvailableTables] = useState<string[]>([]);
+  const [availableDataframes, setAvailableDataframes] = useState<string[]>([]);
   const { toast } = useToast();
   const dbInitialized = useRef(false);
   const dbRef = useRef<Database | null>(null);
@@ -688,7 +689,54 @@ const CodeEditor = ({ language = "sql", defaultValue = "", height = "300px", que
       setDb(null);
       setAvailableTables([]);
     }
-  }, [getInitialCode, language]);
+    // Extract dataframe names for Python
+    if (language === "python") {
+      const adminTableNamesList: string[] = sqlTableNames
+        ? sqlTableNames.split(',').map(n => n.trim().toLowerCase()).filter(n => n.length > 0)
+        : [];
+      
+      // Extract table names from question text
+      const tableNamePatterns = [
+        /(?:FROM|from)\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+        /SQL\s+table[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+        /(?:table|Table|TABLE)[:\s]+([a-zA-Z_][a-zA-Z0-9_]*)/gi,
+        /using\s+the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+        /the\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+table/gi,
+        /\b([a-zA-Z_][a-zA-Z0-9_]*)\s+table\b/gi,
+      ];
+      const mentionedTables: string[] = [];
+      if (question) {
+        tableNamePatterns.forEach(pattern => {
+          pattern.lastIndex = 0;
+          let m;
+          while ((m = pattern.exec(question)) !== null) {
+            if (m[1]) {
+              const tableName = m[1].toLowerCase();
+              const skipWords = ['select', 'where', 'group', 'order', 'having', 'limit', 'join', 'inner', 'left', 'right', 'outer', 'on', 'as', 'and', 'or', 'not', 'in', 'exists', 'like', 'between', 'the', 'a', 'an', 'this', 'that', 'below', 'above'];
+              if (!skipWords.includes(tableName) && !mentionedTables.includes(tableName)) {
+                mentionedTables.push(tableName);
+              }
+            }
+          }
+        });
+      }
+      
+      // Combine admin names and mentioned tables, also include names from questionTables
+      const allNames = new Set<string>();
+      adminTableNamesList.forEach(name => allNames.add(name));
+      mentionedTables.forEach(name => allNames.add(name));
+      questionTables.forEach((table, i) => {
+        const tableName = adminTableNamesList.length > 0 
+          ? adminTableNamesList[Math.min(i, adminTableNamesList.length - 1)]
+          : table.tableName;
+        allNames.add(tableName);
+      });
+      
+      setAvailableDataframes(Array.from(allNames));
+    } else {
+      setAvailableDataframes([]);
+    }
+  }, [getInitialCode, language, question, sqlTableNames, questionTables]);
 
   // Initialize Python (Pyodide) for Python execution
   useEffect(() => {
@@ -1827,6 +1875,7 @@ def print(*args, **kwargs):
                   : [];
                 
                 // Pre-load table data as pandas DataFrames from question
+                const dataframeNames: string[] = [];
                 if (questionTables.length > 0) {
                   for (let i = 0; i < questionTables.length; i++) {
                     const table = questionTables[i];
@@ -1834,6 +1883,8 @@ def print(*args, **kwargs):
                     const tableName = adminTableNamesList.length > 0 
                       ? adminTableNamesList[Math.min(i, adminTableNamesList.length - 1)]
                       : table.tableName;
+                    
+                    dataframeNames.push(tableName);
                     
                     const columns = table.columns;
                     const values = table.values;
@@ -1865,16 +1916,27 @@ del _temp_data
                       ? adminTableNamesList[0]
                       : questionTables[0].tableName;
                     pyodide.runPython(`# Create 'df' as alias to first DataFrame (${firstName})\ndf = ${firstName}`);
+                    if (!dataframeNames.includes('df')) {
+                      dataframeNames.push('df');
+                    }
                   }
+                  setAvailableDataframes(dataframeNames);
                 } else if (adminTableNamesList.length > 0) {
                   // Create empty DataFrames from admin-provided table names
                   for (const tableName of adminTableNamesList) {
+                    dataframeNames.push(tableName);
                     pyodide.runPython(`${tableName} = pd.DataFrame()`);
                   }
                   // Create 'df' as an alias to the first DataFrame
                   if (adminTableNamesList.length > 0) {
                     pyodide.runPython(`# Create 'df' as alias to first DataFrame (${adminTableNamesList[0]})\ndf = ${adminTableNamesList[0]}`);
+                    if (!dataframeNames.includes('df')) {
+                      dataframeNames.push('df');
+                    }
                   }
+                  setAvailableDataframes(dataframeNames);
+                } else {
+                  setAvailableDataframes([]);
                 }
 
                 // Execute user's Python code
@@ -2377,6 +2439,19 @@ except:
           <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs border-b border-border/50 bg-muted/20">
             <span className="text-muted-foreground">Tables available:</span>
             {availableTables.map((name) => (
+              <code
+                key={name}
+                className="px-2 py-0.5 rounded bg-background border border-border/40 text-foreground font-semibold"
+              >
+                {name}
+              </code>
+            ))}
+          </div>
+        )}
+        {language === "python" && availableDataframes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-xs border-b border-border/50 bg-muted/20">
+            <span className="text-muted-foreground">Dataframe available:</span>
+            {availableDataframes.map((name) => (
               <code
                 key={name}
                 className="px-2 py-0.5 rounded bg-background border border-border/40 text-foreground font-semibold"

@@ -494,6 +494,7 @@ const AdminDashboard = () => {
             hint: data.hint,
             imageUrls: data.imageUrls || [],
             pdfUrl: data.pdfUrl,
+            answerText: data.answerText,
             company: data.company,
             difficulty: data.difficulty,
             createdAt: data.createdAt?.toDate?.(),

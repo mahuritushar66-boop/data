@@ -52,6 +52,7 @@ const TheoryQuestionDetail = () => {
   const [question, setQuestion] = useState<TheoryQuestion | null>(null);
   const [loading, setLoading] = useState(true);
   const [showHint, setShowHint] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [nextQuestionId, setNextQuestionId] = useState<string | null>(null);
   const [prevQuestionId, setPrevQuestionId] = useState<string | null>(null);
@@ -141,6 +142,7 @@ const TheoryQuestionDetail = () => {
   // Reset states when question changes
   useEffect(() => {
     setShowHint(false);
+    setShowAnswer(false);
     setCurrentImageIndex(0);
     setLightboxOpen(false);
     setTimerStarted(false);
@@ -446,13 +448,51 @@ const TheoryQuestionDetail = () => {
           <div className="space-y-6">
             {/* Question Text */}
             <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <span>Question</span>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 text-xl font-semibold">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  <span>Question</span>
+                </div>
+                {/* Hint Button - Moved next to question */}
+                {question.hint && (
+                  <Button
+                    variant={showHint ? "secondary" : "outline"}
+                    onClick={() => setShowHint(!showHint)}
+                    size="sm"
+                    className="gap-2 transition-all duration-300"
+                  >
+                    {showHint ? (
+                      <>
+                        <EyeOff className="h-4 w-4" />
+                        Hide Hint
+                      </>
+                    ) : (
+                      <>
+                        <Lightbulb className="h-4 w-4 text-yellow-500" />
+                        Show Hint
+                      </>
+                    )}
+                  </Button>
+                )}
               </div>
               <div className="text-lg md:text-xl leading-relaxed whitespace-pre-wrap text-foreground/90">
                 {question.question}
               </div>
+              
+              {/* Hint Display - Shown when toggled */}
+              {question.hint && showHint && (
+                <div className="p-4 md:p-5 bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-yellow-500/20">
+                      <Lightbulb className="h-5 w-5 text-yellow-500" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400 mb-2">Hint</p>
+                      <p className="text-sm md:text-base leading-relaxed">{question.hint}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Images Section - Moved under question */}
@@ -542,55 +582,39 @@ const TheoryQuestionDetail = () => {
               </div>
             )}
 
-            {/* Hint Section - Moved to bottom of images */}
-            {question.hint && (
-              <div className="pt-4 border-t border-border/50">
-                <Button
-                  variant={showHint ? "secondary" : "outline"}
-                  onClick={() => setShowHint(!showHint)}
-                  className="gap-2 transition-all duration-300"
-                >
-                  {showHint ? (
-                    <>
-                      <EyeOff className="h-4 w-4" />
-                      Hide Hint
-                    </>
-                  ) : (
-                    <>
-                      <Lightbulb className="h-4 w-4 text-yellow-500" />
-                      Show Hint
-                    </>
-                  )}
-                </Button>
-                
-                <div className={`overflow-hidden transition-all duration-500 ease-out ${
-                  showHint ? "max-h-[500px] opacity-100 mt-4" : "max-h-0 opacity-0"
-                }`}>
-                  <div className="p-4 md:p-5 bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-lg bg-yellow-500/20">
-                        <Lightbulb className="h-5 w-5 text-yellow-500" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400 mb-2">Hint</p>
-                        <p className="text-sm md:text-base leading-relaxed">{question.hint}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Right Side: PDF Viewer or Answer Text */}
           {(hasPdf || hasAnswerText) && (
             <div className="lg:sticky lg:top-24 lg:self-start">
               <div className="flex flex-col h-[calc(100vh-180px)] min-h-[700px] max-h-[900px]">
-                <div className="flex items-center gap-3 flex-shrink-0 mb-5">
-                  <div className="p-2 rounded-lg bg-red-500/10">
-                    <FileText className="h-5 w-5 text-red-500" />
+                <div className="flex items-center justify-between gap-3 flex-shrink-0 mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-red-500/10">
+                      <FileText className="h-5 w-5 text-red-500" />
+                    </div>
+                    <h2 className="text-xl font-semibold">{hasPdf ? "Document" : "Answer"}</h2>
                   </div>
-                  <h2 className="text-xl font-semibold">{hasPdf ? "Document" : "Answer"}</h2>
+                  {!hasPdf && hasAnswerText && (
+                    <Button
+                      variant={showAnswer ? "secondary" : "outline"}
+                      onClick={() => setShowAnswer(!showAnswer)}
+                      size="sm"
+                      className="gap-2"
+                    >
+                      {showAnswer ? (
+                        <>
+                          <EyeOff className="h-4 w-4" />
+                          Hide Answer
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-4 w-4" />
+                          Show Answer
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
                 
                 <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
@@ -601,13 +625,22 @@ const TheoryQuestionDetail = () => {
                       height="calc(100vh - 350px)"
                     />
                   ) : hasAnswerText ? (
-                    <div className="flex-1 overflow-y-auto bg-muted/30 rounded-lg p-6 border border-border">
-                      <div className="prose prose-sm max-w-none dark:prose-invert">
-                        <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
-                          {question.answerText}
+                    showAnswer ? (
+                      <div className="flex-1 overflow-y-auto bg-muted/30 rounded-lg p-6 border border-border">
+                        <div className="prose prose-sm max-w-none dark:prose-invert">
+                          <div className="whitespace-pre-wrap text-muted-foreground leading-relaxed">
+                            {question.answerText}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center bg-muted/30 rounded-lg border border-border">
+                        <div className="text-center space-y-3">
+                          <Eye className="h-12 w-12 text-muted-foreground/50 mx-auto" />
+                          <p className="text-muted-foreground">Click "Show Answer" to view the solution</p>
+                        </div>
+                      </div>
+                    )
                   ) : null}
                 </div>
               </div>
